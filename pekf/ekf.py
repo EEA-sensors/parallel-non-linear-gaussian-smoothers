@@ -2,7 +2,7 @@ from typing import Callable
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
-from jax import lax, jacfwd, vmap
+from jax import lax, vmap, jacfwd
 
 from pekf.utils import MVNormalParameters
 
@@ -33,8 +33,8 @@ def filtering_operator(elem1, elem2):
     IpCJ = I_dim + jnp.dot(C1, J2)
     IpJC = I_dim + jnp.dot(J2, C1)
 
-    AIpCJ_inv = jlinalg.solve(IpCJ, A2.T, sym_pos=True).T
-    AIpJC_inv = jlinalg.solve(IpJC, A1, sym_pos=True).T
+    AIpCJ_inv = jlinalg.solve(IpCJ.T, A2.T, sym_pos=False).T
+    AIpJC_inv = jlinalg.solve(IpJC.T, A1, sym_pos=False).T
 
     A = jnp.dot(AIpCJ_inv, A1)
     b = jnp.dot(AIpCJ_inv, b1 + jnp.dot(C1, eta2)) + b2
@@ -44,68 +44,69 @@ def filtering_operator(elem1, elem2):
     return A, b, C, eta, J
 
 
-def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, m0, P0):
+def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, m0, P0, x_k_1, x_k):
     predicate = i == 0
 
-    generic_operand = (Rk, Qk_1, yk, m0)
-    initial_operand = (Rk, P0, yk, jnp.zeros_like(m0))
+    jac_obs = jacfwd(observation_function, 0)
+    jac_trans = jacfwd(transition_function, 0)
 
-    def _generic_function(args):
-        r, q, y, m = args[0]
-        inp = (observation_function, r, transition_function, q, y, m)
-        return _make_associative_filtering_params(inp)
+    def _first(_):
+        return _make_associative_filtering_params_first(observation_function, jac_obs, Rk, transition_function,
+                                                        jac_trans, Qk_1, m0, P0, yk)
 
-    def _initial_function(args):
-        r, q, y, m = args[1]
-        inp = (observation_function, r, lambda z: z, q, y, m)
-        return _make_associative_filtering_params(inp)
+    def _generic(_):
+        return _make_associative_filtering_params_generic(observation_function, jac_obs, Rk, transition_function,
+                                                          jac_trans, x_k_1, x_k, Qk_1, yk)
 
     return lax.cond(predicate,
-                    _initial_function,  # take initial
-                    _generic_function,  # take generic
-                    (initial_operand, generic_operand))
+                    _first,  # take initial
+                    _generic,  # take generic
+                    None)
 
 
-def _make_associative_filtering_params(args):
-    observation_function, Rk, transition_function, Qk_1, yk, u = args
+def _make_associative_filtering_params_first(observation_function, jac_observation_function, R, transition_function,
+                                             jac_transition_function, Q, m0, P0, y):
+    F = jac_transition_function(m0)
 
-    # FIRST TERM
-    ############
+    m1 = transition_function(m0)
+    P1 = F @ P0 @ F.T + Q
 
-    dim_x = Qk_1.shape[0]
+    H = jac_observation_function(m1)
 
-    zero_x = jnp.zeros(dim_x)
-    I_dim = jnp.eye(dim_x)
+    S = H @ P1 @ H.T + R
+    K = jlinalg.solve(S, H @ P1, sym_pos=True).T
+    A = jnp.zeros(F.shape)
+    b = m1 + K @ (y - observation_function(m1))
+    C = P1 - (K @ S @ K.T)
 
-    # Jacobians
-    Hk = jacfwd(observation_function, 0)(zero_x)
-    Fk_1 = jacfwd(transition_function, 0)(zero_x)
+    eta = jnp.zeros(F.shape[0])
+    J = jnp.zeros(F.shape)
 
-    # temp variable
-    HQ = jnp.dot(Hk, Qk_1)  # Hk @ Qk_1
+    return A, b, C, eta, J
 
-    Sk = jnp.dot(HQ, Hk.T) + Rk
-    Kk = jlinalg.solve(Sk, HQ, sym_pos=True).T  # using the fact that S and Q are symmetric
 
-    # temp variable:
-    I_KH = I_dim - jnp.dot(Kk, Hk)  # I - Kk @ Hk
+def _make_associative_filtering_params_generic(observation_function, jac_observation_function, Rk, transition_function,
+                                               jac_transition_function, x_k_1, x_k, Qk_1, yk):
+    F = jac_transition_function(x_k_1)
+    H = jac_observation_function(x_k)
 
-    Ck = jnp.dot(I_KH, Qk_1)
+    alpha = observation_function(x_k) + H @ transition_function(x_k_1) - H @ F @ x_k_1 - H @ x_k
+    residual = yk - alpha
+    HQ = H @ Qk_1
 
-    residual = yk - jnp.dot(Hk, u)
+    S = HQ @ H.T + Rk
+    K = jlinalg.solve(S, HQ, sym_pos=True).T
+    A = F - K @ H @ F
+    b = K @ residual
+    C = Qk_1 - K @ H @ Qk_1
 
-    bk = u + jnp.dot(Kk, residual)
-    Ak = jnp.dot(I_KH, Fk_1)
+    HF = H @ F
 
-    # SECOND TERM
-    #############
-    HF = jnp.dot(Hk, Fk_1)
-    FHS_inv = jlinalg.solve(Sk, HF).T
+    temp = jlinalg.solve(S, HF, sym_pos=True).T
+    eta = temp @ residual
+    J = temp @ HF
 
-    etak = jnp.dot(FHS_inv, residual)
-    Jk = jnp.dot(FHS_inv, HF)
-
-    return Ak, bk, Ck, etak, Jk
+    return A, b, C, eta, J
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -113,7 +114,8 @@ def filter_routine(initial_state: MVNormalParameters,
                    transition_function: Callable,
                    transition_covariance: jnp.ndarray,
                    observation_function: Callable,
-                   observation_covariance: jnp.ndarray):
+                   observation_covariance: jnp.ndarray,
+                   linearisation_points: jnp.ndarray = None):
     """ Computes the predict-update routine of the Extended Kalman Filter equations
     using temporal parallelization and returns a series of filtered_states TODO:reference
 
@@ -131,6 +133,8 @@ def filter_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariance: (K, K) array
         observation error covariances for each time step
+    linearisation_points: (n, D) array, optional
+        points at which to compute the jacobians.
 
     Returns
     -------
@@ -139,16 +143,20 @@ def filter_routine(initial_state: MVNormalParameters,
 
     """
     n_observations = observations.shape[0]
+    x_dim = initial_state.mean.shape[0]
+    dtype = initial_state.mean.dtype
+    if linearisation_points is None:
+        linearisation_points = jnp.zeros((n_observations, x_dim), dtype=dtype)
 
     @vmap
-    def make_params(observations, i):
+    def make_params(observations, i, x_k_1, x_k):
         return make_associative_filtering_params(observation_function, observation_covariance,
                                                  transition_function, transition_covariance, observations,
                                                  i, initial_state.mean,
-                                                 initial_state.cov)
+                                                 initial_state.cov, x_k_1, x_k)
 
-    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations))
-
+    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearisation_points[1:]), 0)
+    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearisation_points)
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Cs, etas, Js))
 
     return vmap(MVNormalParameters)(filtered_means, filtered_covariances)
