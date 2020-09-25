@@ -54,12 +54,8 @@ def _make_associative_smoothing_params_generic(transition_function, jac_transiti
     F = jac_transition_function(xk)
 
     Pp = F @ Pk @ F.T + Qk
-    # xk = id_print(xk, what="xk")
 
-    # Pp = id_print(Pp, what="Pp")
-    # F = id_print(F, what="F")
-
-    E = Pk @ F.T @ jlinalg.inv(Pp)
+    E = jlinalg.solve(Pp, F @ Pk, sym_pos=True).T
 
     g = mk - E @ (transition_function(xk) + F @ (mk - xk))
     L = Pk - E @ F @ Pk
