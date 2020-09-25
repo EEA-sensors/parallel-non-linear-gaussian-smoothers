@@ -25,19 +25,19 @@ def _transition_function(x, dt):
         The transitioned state
     """
     w = x[-1]
-    w = x[-1]
-    predicate = w == 0
+    predicate = jnp.abs(w) < 1e-6
+
+    coswt = jnp.cos(w * dt)
+    sinwt = jnp.sin(w * dt)
 
     def true_fun(_):
-        return 1., 0., 0., 0., dt
+        return coswt, 0., sinwt, dt
 
     def false_fun(_):
-        coswt = jnp.cos(w * dt)
-        sinwt = jnp.sin(w * dt)
         coswto = coswt - 1
-        return coswt, coswto, coswto / w, sinwt, sinwt / w
+        return coswt, coswto / w, sinwt, sinwt / w
 
-    coswt, coswto, coswtopw, sinwt, sinwtpw = lax.cond(predicate, true_fun, false_fun, None)
+    coswt, coswtopw, sinwt, sinwtpw = lax.cond(predicate, true_fun, false_fun, None)
 
     F = jnp.array([[1, 0, sinwtpw, -coswtopw, 0],
                    [0, 1, coswtopw, sinwtpw, 0],
@@ -167,19 +167,23 @@ def get_data(x0, dt, r, T, s1, s2, random_state=None):
     return ts, true_states, observations
 
 
-def plot_bearings(true_states, s1, s2, figsize=(10, 10)):
+def plot_bearings(states, labels, s1, s2, figsize=(10, 10), quiver=False):
     """
 
     Parameters
     ----------
-    true_states: array_like
-        True states
+    states: list of array_like
+        list of states to plot
+    labels: list of str
+        list of lables for the states
     s1: array_like
         first sensor
     s2: array_like
         second sensor
     figsize: tuple of int
         figure size in inches
+    quiver: bool
+        show the velocity field
 
     Returns
     -------
@@ -187,9 +191,16 @@ def plot_bearings(true_states, s1, s2, figsize=(10, 10)):
     """
     fig, ax = plt.subplots(figsize=figsize)
 
-    ax.plot(*true_states[:, :2].T, linestyle='--', label="True Signal")
-    ax.quiver(*true_states[::10].T, units='xy', scale=4, width=0.01, label="Velocity every 20 steps")
-    ax.scatter(*true_states[0, :2], marker="*", s=200, label="Starting point", color='orange')
+    if not isinstance(states, list):
+        states = [states]
+
+    if not isinstance(labels, list):
+        labels = [labels]
+
+    for label, state in zip(labels, states):
+        ax.plot(*state[:, :2].T, linestyle='--', label=label)
+        if quiver:
+            ax.quiver(*state[::10].T, units='xy', scale=4, width=0.01)
     ax.scatter(*s1, marker="o", s=200, label="Sensor 1", color='k')
     ax.scatter(*s2, marker="x", s=200, label="Sensor 2", color='k')
 

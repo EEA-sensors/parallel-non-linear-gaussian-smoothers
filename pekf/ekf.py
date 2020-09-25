@@ -10,8 +10,7 @@ from pekf.utils import MVNormalParameters
 @vmap
 def filtering_operator(elem1, elem2):
     """
-    Wrapper for the associative operator described in TODO: put the reference
-    It is implemented in :func:`_filtering_operator`
+    Associative operator described in TODO: put the reference
 
     Parameters
     ----------
@@ -90,19 +89,23 @@ def _make_associative_filtering_params_generic(observation_function, jac_observa
     F = jac_transition_function(x_k_1)
     H = jac_observation_function(x_k)
 
-    alpha = observation_function(x_k) + H @ transition_function(x_k_1) - H @ F @ x_k_1 - H @ x_k
+    F_x_k_1 = F @ x_k_1
+    x_k_hat = transition_function(x_k_1)
+
+    alpha = observation_function(x_k) + H @ (x_k_hat - F_x_k_1 - x_k)
     residual = yk - alpha
     HQ = H @ Qk_1
 
     S = HQ @ H.T + Rk
-    K = jlinalg.solve(S, HQ, sym_pos=True).T
+    S_invH = jlinalg.solve(S, H, sym_pos=True)
+    K = (S_invH @ Qk_1).T
     A = F - K @ H @ F
-    b = K @ residual
+    b = K @ residual + x_k_hat - F_x_k_1
     C = Qk_1 - K @ H @ Qk_1
 
     HF = H @ F
 
-    temp = jlinalg.solve(S, HF, sym_pos=True).T
+    temp = (S_invH @ F).T
     eta = temp @ residual
     J = temp @ HF
 
@@ -149,13 +152,13 @@ def filter_routine(initial_state: MVNormalParameters,
         linearisation_points = jnp.zeros((n_observations, x_dim), dtype=dtype)
 
     @vmap
-    def make_params(observations, i, x_k_1, x_k):
+    def make_params(obs, i, x_k_1, x_k):
         return make_associative_filtering_params(observation_function, observation_covariance,
-                                                 transition_function, transition_covariance, observations,
+                                                 transition_function, transition_covariance, obs,
                                                  i, initial_state.mean,
                                                  initial_state.cov, x_k_1, x_k)
 
-    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearisation_points[1:]), 0)
+    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearisation_points[:-1]), 0)
     As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearisation_points)
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Cs, etas, Js))
 
