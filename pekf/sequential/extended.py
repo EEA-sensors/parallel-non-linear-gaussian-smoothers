@@ -2,19 +2,17 @@ from typing import Callable, Tuple
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlag
-import jax.scipy.stats as jstats
 from jax import lax, jacfwd
 from jax.lax import cond
 
 from ..utils import MVNormalParameters, make_matrices_parameters
 
-__all__ = ["filter_routine"]
+__all__ = ["filter_routine", "smoother_routine"]
 
 
-def predict(transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+def predict(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
             transition_covariance: jnp.ndarray,
-            prior: MVNormalParameters,
-            additive: bool) -> MVNormalParameters:
+            prior: MVNormalParameters) -> MVNormalParameters:
     """ Computes the extended kalman filter linearization of :math:`x_{t+1} = f(x_t, \mathcal{N}(0, \Sigma))`
 
     Parameters
@@ -25,31 +23,22 @@ def predict(transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
         covariance :math:`\Sigma` of the noise fed to transition_function
     prior: MVNormalParameters
         prior state of the filter x
-    additive: bool
-        flag for additive noise, if true transition_function second argument is supposed to be simply added
     Returns
     -------
     out: MVNormalParameters
         Predicted state
     """
-    cov_shape = transition_covariance.shape[0]
-    zero = jnp.zeros(cov_shape, dtype=transition_covariance.dtype)
-    mean = transition_function(prior.mean, zero)
+    mean = transition_function(prior.mean)
 
-    jac_x = jacfwd(transition_function, 0)(prior.mean, zero)
-    if not additive:
-        jac_q = jacfwd(transition_function, 1)(prior.mean, zero)
-    else:
-        jac_q = jnp.eye(cov_shape)
-    cov = jnp.dot(jac_x, jnp.dot(prior.cov, jac_x.T)) + jnp.dot(jac_q, jnp.dot(transition_covariance, jac_q.T))
+    jac_x = jacfwd(transition_function, 0)(prior.mean)
+    cov = jnp.dot(jac_x, jnp.dot(prior.cov, jac_x.T)) + transition_covariance
     return MVNormalParameters(mean, cov)
 
 
-def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+def update(observation_function: Callable[[jnp.ndarray], jnp.ndarray],
            observation_covariance: jnp.ndarray,
            predicted: MVNormalParameters,
-           observation: jnp.ndarray,
-           additive: bool) -> Tuple[float, MVNormalParameters]:
+           observation: jnp.ndarray) -> Tuple[float, MVNormalParameters]:
     """ Computes the extended kalman filter linearization of :math:`x_t \mid y_t`
 
     Parameters
@@ -62,8 +51,6 @@ def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
         predicted state of the filter :math:`x`
     observation: (K) array
         Observation :math:`y`
-    additive: bool
-        flag for additive error, if true observation_function second argument is supposed to be simply added
     Returns
     -------
     loglikelihood: float
@@ -72,29 +59,19 @@ def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
         filtered state
     """
 
-    cov_shape = observation_covariance.shape[0]
-    zero = jnp.zeros(cov_shape, dtype=observation_covariance.dtype)
-
-    obs_mean = observation_function(predicted.mean, zero)
-    jac_x = jacfwd(observation_function, 0)(predicted.mean, zero)
-
-    if not additive:
-        jac_q = jacfwd(observation_function, 1)(predicted.mean, zero)
-    else:
-        jac_q = jnp.eye(cov_shape)
+    obs_mean = observation_function(predicted.mean)
+    jac_x = jacfwd(observation_function, 0)(predicted.mean)
 
     residual = observation - obs_mean
     residual_covariance = jnp.dot(jac_x, jnp.dot(predicted.cov, jac_x.T))
-    residual_covariance = residual_covariance + jnp.dot(jac_q, jnp.dot(observation_covariance, jac_q.T))
-
-    loglikelihood = jstats.multivariate_normal.logpdf(residual, jnp.zeros_like(obs_mean), residual_covariance)
+    residual_covariance = residual_covariance + observation_covariance
 
     gain = jnp.dot(predicted.cov, jlag.solve(residual_covariance, jac_x, sym_pos=True).T)
 
     mean = predicted.mean + jnp.dot(gain, residual)
     cov = predicted.cov - jnp.dot(gain, jnp.dot(residual_covariance, gain.T))
     updated_state = MVNormalParameters(mean, cov)
-    return loglikelihood, updated_state
+    return updated_state
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -102,9 +79,7 @@ def filter_routine(initial_state: MVNormalParameters,
                    transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                    transition_covariances: jnp.ndarray,
                    observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
-                   observation_covariances: jnp.ndarray,
-                   additive_transition_noise: bool = False,
-                   additive_observation_error: bool = False) -> Tuple[float, MVNormalParameters]:
+                   observation_covariances: jnp.ndarray) -> Tuple[float, MVNormalParameters]:
     """ Computes the predict-update routine of the Kalman Filter equations and returns a series of filtered_states
 
     Parameters
@@ -121,10 +96,6 @@ def filter_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariances: (K, K) or (1, K, K) or (n, K, K) array
         observation error covariances for each time step, if passed only one, it is repeated n times
-    additive_transition_noise: bool, optional
-        Is the transition noise additive, if true transition_function second argument is supposed to be simply added
-    additive_observation_error: bool, optional
-        Is the observation error additive, if true observation_function second argument is supposed to be simply added
     Returns
     -------
     loglikelihood: float
@@ -132,7 +103,6 @@ def filter_routine(initial_state: MVNormalParameters,
     filtered_states: MVNormalParameters
         list of filtered states
     """
-    # TODO: {AdrienCorenflos} do check on functions signatures: need to inputs
     n_observations = observations.shape[0]
 
     transition_covariances, observation_covariances = list(map(
@@ -141,28 +111,27 @@ def filter_routine(initial_state: MVNormalParameters,
          observation_covariances]))
 
     def body(carry, inputs):
-        loglikelihood, state = carry
+        state = carry
         observation, transition_covariance, observation_covariance = inputs
-        loglikelihood_increment, updated_state = update(observation_function, observation_covariance, state,
-                                                        observation, additive_observation_error)
-        predicted_state = predict(transition_function, transition_covariance, updated_state, additive_transition_noise)
-        return (loglikelihood + loglikelihood_increment, predicted_state), updated_state
+        updated_state = update(observation_function, observation_covariance, state,
+                               observation)
+        predicted_state = predict(transition_function, transition_covariance, updated_state)
+        return predicted_state, updated_state
 
-    (loglikelihood, _), filtered_states = lax.scan(body,
-                                                   (0., initial_state),
-                                                   [observations,
-                                                    transition_covariances,
-                                                    observation_covariances],
-                                                   length=n_observations)
+    _, filtered_states = lax.scan(body,
+                                  initial_state,
+                                  [observations,
+                                   transition_covariances,
+                                   observation_covariances],
+                                  length=n_observations)
 
-    return loglikelihood, filtered_states
+    return filtered_states
 
 
-def smooth(transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
            transition_covariance: jnp.array,
            filtered_state: MVNormalParameters,
-           previous_smoothed: MVNormalParameters,
-           additive: bool) -> MVNormalParameters:
+           previous_smoothed: MVNormalParameters) -> MVNormalParameters:
     """
     One step extended kalman smoother
 
@@ -176,27 +145,18 @@ def smooth(transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray
         mean and cov computed by Kalman Filtering
     previous_smoothed: MVNormalParameters,
         smoothed state of the previous step
-    additive: bool
-        flag for additive noise, if true transition_function second argument is supposed to be simply added
     Returns
     -------
     smoothed_state: MVNormalParameters
         smoothed state
     """
 
-    cov_shape = transition_covariance.shape[0]
-    zero = jnp.zeros(cov_shape, dtype=transition_covariance.dtype)
-
-    mean = transition_function(filtered_state.mean, zero)
+    mean = transition_function(filtered_state.mean)
     mean_diff = previous_smoothed.mean - mean
 
-    jac_x = jacfwd(transition_function, 0)(filtered_state.mean, zero)
-    if not additive:
-        jac_q = jacfwd(transition_function, 1)(filtered_state.mean, zero)
-    else:
-        jac_q = jnp.eye(cov_shape)
+    jac_x = jacfwd(transition_function, 0)(filtered_state.mean)
 
-    cov = jnp.dot(jac_x, jnp.dot(filtered_state.cov, jac_x.T)) + jnp.dot(jac_q, jnp.dot(transition_covariance, jac_q.T))
+    cov = jnp.dot(jac_x, jnp.dot(filtered_state.cov, jac_x.T)) + transition_covariance
     cov_diff = previous_smoothed.cov - cov
 
     gain = jnp.dot(filtered_state.cov, jlag.solve(cov, jac_x, sym_pos=True).T)
@@ -208,9 +168,8 @@ def smooth(transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray
 
 
 def smoother_routine(filtered_states: MVNormalParameters,
-                     transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+                     transition_function: Callable[[jnp.ndarray], jnp.ndarray],
                      transition_covariances: jnp.ndarray,
-                     additive_transition_noise: bool = True,
                      ) -> MVNormalParameters:
     """ Computes the extended Rauch-Tung-Striebel (a.k.a extended Kalman) smoother routine and returns a series of smoothed_states
 
@@ -222,8 +181,6 @@ def smoother_routine(filtered_states: MVNormalParameters,
         transition function of the state space model
     transition_covariances: (D, D) or (1, D, D) or (n, D, D) array
         transition covariances for each time step, if passed only one, it is repeated n times
-    additive_transition_noise: bool, optional
-        Is the transition noise additive, if true transition_function second argument is supposed to be simply added
 
     Returns
     -------
@@ -232,9 +189,7 @@ def smoother_routine(filtered_states: MVNormalParameters,
     """
     n_observations = filtered_states.mean.shape[0]
 
-    transition_covariances = list(map(
-        lambda z: make_matrices_parameters(z, n_observations),
-        [transition_covariances]))
+    transition_covariances = make_matrices_parameters(transition_covariances, n_observations)
 
     def body(carry, list_inputs):
         j, state_ = carry
@@ -246,8 +201,7 @@ def smoother_routine(filtered_states: MVNormalParameters,
         def otherwise(operand):
             state, inputs, i = operand
             filtered, transition_covariance = inputs
-            smoothed_state = smooth(transition_function, transition_covariance, filtered, state,
-                                    additive_transition_noise)
+            smoothed_state = smooth(transition_function, transition_covariance, filtered, state)
             return (i + 1, smoothed_state), smoothed_state
 
         return cond(j > 0, otherwise, first_step, operand=(state_, list_inputs, j))
