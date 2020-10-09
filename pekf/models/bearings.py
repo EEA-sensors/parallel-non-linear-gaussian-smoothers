@@ -2,6 +2,7 @@ from functools import partial
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import numba as nb
 import numpy as np
 import scipy.linalg as linalg
 from jax import lax, jit
@@ -115,6 +116,24 @@ def make_parameters(qc, qw, r, dt, s1, s2):
     return Q, R, observation_function, transition_function
 
 
+@nb.njit
+def _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states):
+    for i, a in enumerate(a_s):
+        with nb.objmode(x='float32[::1]'):
+            F = np.array([[0, 0, 1, 0],
+                          [0, 0, 0, 1],
+                          [0, 0, 0, a],
+                          [0, 0, -a, 0]], dtype=np.float32)
+            x = linalg.expm(F * dt) @ x
+        y1 = np.arctan2(x[1] - s1[1], x[0] - s1[0]) + r * normals[i, 0]
+        y2 = np.arctan2(x[1] - s2[1], x[0] - s2[0]) + r * normals[i, 1]
+
+        observations[i] = [y1, y2]
+        observations[i] = [y1, y2]
+        true_states[i] = np.concatenate((x, np.array([a])))
+    # return true_states, observations
+
+
 def get_data(x0, dt, r, T, s1, s2, random_state=None):
     """
 
@@ -147,23 +166,18 @@ def get_data(x0, dt, r, T, s1, s2, random_state=None):
     if random_state is None or isinstance(random_state, int):
         random_state = np.random.RandomState(random_state)
     a_s = 1 + 10 * dt * np.cumsum(random_state.randn(T))
+    a_s = a_s.astype(np.float32)
+    s1 = np.asarray(s1, dtype=np.float32)
+    s2 = np.asarray(s2, dtype=np.float32)
 
-    x = np.copy(x0)
-    observations = np.empty((T, 2))
-    true_states = np.empty((T, 5))
-    ts = np.linspace(dt, (T + 1) * dt, T)
-    for i, a in enumerate(a_s):
-        F = np.array([[0, 0, 1, 0],
-                      [0, 0, 0, 1],
-                      [0, 0, 0, a],
-                      [0, 0, -a, 0]])
-        x = linalg.expm(F * dt) @ x
-        y1 = np.arctan2(x[1] - s1[1], x[0] - s1[0]) + r * random_state.randn()
-        y2 = np.arctan2(x[1] - s2[1], x[0] - s2[0]) + r * random_state.randn()
+    x = np.copy(x0).astype(np.float32)
+    observations = np.empty((T, 2), dtype=np.float32)
+    true_states = np.empty((T, 5), dtype=np.float32)
+    ts = np.linspace(dt, (T + 1) * dt, T).astype(np.float32)
 
-        observations[i] = [y1, y2]
-        observations[i] = [y1, y2]
-        true_states[i] = np.concatenate([x, [a]])
+    normals = random_state.randn(T, 2).astype(np.float32)
+
+    _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states)
     return ts, true_states, observations
 
 
