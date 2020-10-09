@@ -167,8 +167,8 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     return smoothed_state
 
 
-def smoother_routine(filtered_states: MVNormalParameters,
-                     transition_function: Callable[[jnp.ndarray], jnp.ndarray],
+def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
+                     filtered_states: MVNormalParameters,
                      transition_covariances: jnp.ndarray,
                      ) -> MVNormalParameters:
     """ Computes the extended Rauch-Tung-Striebel (a.k.a extended Kalman) smoother routine and returns a series of smoothed_states
