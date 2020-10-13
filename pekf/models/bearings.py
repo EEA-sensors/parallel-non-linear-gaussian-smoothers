@@ -165,7 +165,7 @@ def get_data(x0, dt, r, T, s1, s2, random_state=None):
     """
     if random_state is None or isinstance(random_state, int):
         random_state = np.random.RandomState(random_state)
-    a_s = 1 + 10 * dt * np.cumsum(random_state.randn(T))
+    a_s = 1 + 10. * dt * np.cumsum(random_state.randn(T))
     a_s = a_s.astype(np.float32)
     s1 = np.asarray(s1, dtype=np.float32)
     s2 = np.asarray(s2, dtype=np.float32)
@@ -212,7 +212,7 @@ def plot_bearings(states, labels, s1, s2, figsize=(10, 10), quiver=False):
         labels = [labels]
 
     for label, state in zip(labels, states):
-        ax.plot(*state[:, :2].T, linestyle='--', label=label)
+        ax.plot(*state[:, :2].T, linestyle='--', label=label, alpha=0.75)
         if quiver:
             ax.quiver(*state[::10].T, units='xy', scale=4, width=0.01)
     ax.scatter(*s1, marker="o", s=200, label="Sensor 1", color='k')

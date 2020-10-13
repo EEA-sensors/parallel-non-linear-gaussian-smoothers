@@ -3,10 +3,9 @@ from typing import Callable
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
-from jax.experimental.host_callback import id_print
 
 from pekf.utils import MVNormalParameters
-
+from jax.experimental.host_callback import id_print
 
 @vmap
 def smoothing_operator(elem1, elem2):
@@ -29,7 +28,7 @@ def smoothing_operator(elem1, elem2):
 
     g = E2 @ g1 + g2
     E = E2 @ E1
-    L = E2 @ L1 @ E2.T @ L2
+    L = E2 @ L1 @ E2 + L2
     return g, E, L
 
 
@@ -52,13 +51,13 @@ def make_associative_smoothing_params(transition_function, Qk, i, n, mk, Pk, xk)
 
 def _make_associative_smoothing_params_generic(transition_function, jac_transition_function, Qk, mk, Pk, xk):
     F = jac_transition_function(xk)
-
     Pp = F @ Pk @ F.T + Qk
 
     E = jlinalg.solve(Pp, F @ Pk, sym_pos=True).T
 
     g = mk - E @ (transition_function(xk) + F @ (mk - xk))
     L = Pk - E @ F @ Pk
+
     return g, E, L
 
 

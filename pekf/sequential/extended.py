@@ -113,10 +113,10 @@ def filter_routine(initial_state: MVNormalParameters,
     def body(carry, inputs):
         state = carry
         observation, transition_covariance, observation_covariance = inputs
-        updated_state = update(observation_function, observation_covariance, state,
+        predicted_state = predict(transition_function, transition_covariance, state)
+        updated_state = update(observation_function, observation_covariance, predicted_state,
                                observation)
-        predicted_state = predict(transition_function, transition_covariance, updated_state)
-        return predicted_state, updated_state
+        return updated_state, updated_state
 
     _, filtered_states = lax.scan(body,
                                   initial_state,

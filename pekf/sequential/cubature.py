@@ -3,7 +3,6 @@ from typing import Tuple, Callable
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
-import jax.scipy.stats as jstats
 import numpy as np
 from jax import lax
 from jax.lax import cond
@@ -35,7 +34,7 @@ def cubature_weights(n_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     wm = np.ones(shape=(2 * n_dim,)) / (2 * n_dim)
     wc = wm
-    xi = np.concatenate([np.eye(n_dim), -np.eye(n_dim)], axis=1) * np.sqrt(n_dim)
+    xi = np.concatenate([np.eye(n_dim), -np.eye(n_dim)], axis=0) * np.sqrt(n_dim)
 
     return wm, wc, xi
 
@@ -60,8 +59,8 @@ def get_sigma_points(mv_normal_parameters: MVNormalParameters) -> SigmaPoints:
 
     wm, wc, xi = cubature_weights(n_dim)
 
-    sigma_points = jnp.tile(mean.reshape(-1, 1), (1, wm.shape[0])) \
-                   + jnp.dot(jnp.linalg.cholesky(mv_normal_parameters.cov), xi)
+    sigma_points = jnp.repeat(mean.reshape(1, -1), wm.shape[0], axis=0) \
+                   + jnp.dot(jnp.linalg.cholesky(mv_normal_parameters.cov), xi.T).T
 
     return SigmaPoints(sigma_points, wm, wc)
 
@@ -80,9 +79,9 @@ def get_mv_normal_parameters(sigma_points: SigmaPoints, noise: np.ndarray) -> MV
     out: MVNormalParameters
         Mean and covariance of RV of dimension K computed from sigma-points
     """
-    mean = jnp.dot(sigma_points.points, sigma_points.wm)
-    diff = sigma_points.points - mean.reshape(-1, 1)
-    cov = jnp.dot(sigma_points.wc.reshape(1, -1) * diff, diff.T) + noise
+    mean = jnp.dot(sigma_points.wm, sigma_points.points)
+    diff = sigma_points.points - mean.reshape(1, -1)
+    cov = jnp.dot(sigma_points.wc.reshape(1, -1) * diff.T, diff) + noise
     return MVNormalParameters(mean, cov=cov)
 
 
@@ -146,7 +145,7 @@ def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
            observation_covariance: jnp.ndarray,
            predicted_points: SigmaPoints,
            predicted_parameters: MVNormalParameters,
-           observation: jnp.ndarray) -> Tuple[float, MVNormalParameters]:
+           observation: jnp.ndarray) -> MVNormalParameters:
     """ Computes the extended kalman filter linearization of :math:`x_t \mid y_t`
 
     Parameters
@@ -163,8 +162,6 @@ def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
         Observation :math:`y`
     Returns
     -------
-    loglikelihood: float
-        Log-likelihood increment for observation
     updated_mvn_parameters: MVNormalParameters
         filtered state
     """
@@ -176,18 +173,14 @@ def update(observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarra
                                                                          observation_covariance),
                                                       observation_function)
 
-    loglikelihood = jstats.multivariate_normal.logpdf(observation,
-                                                      obs_mvn_parameters.mean,
-                                                      obs_mvn_parameters.cov)
-
     cross_covariance = jnp.dot(
-        (predicted_points.points - predicted_parameters.mean.reshape(-1, 1)) * predicted_points.wm.reshape(1, -1),
-        obs_sigma_points.points.T - obs_mvn_parameters.mean.reshape(1, -1))
+        (predicted_points.points - predicted_parameters.mean.reshape(1, -1)).T * predicted_points.wm.reshape(1, -1),
+        obs_sigma_points.points - obs_mvn_parameters.mean.reshape(1, -1))
 
     gain = jlinalg.solve(obs_mvn_parameters.cov, cross_covariance.T, sym_pos=True).T
     mean = predicted_parameters.mean + jnp.dot(gain, observation - obs_mvn_parameters.mean)
     cov = predicted_parameters.cov - jnp.dot(gain, cross_covariance.T)
-    return loglikelihood, MVNormalParameters(mean, cov)
+    return MVNormalParameters(mean, cov)
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -228,28 +221,27 @@ def filter_routine(initial_state: MVNormalParameters,
         [transition_covariances,
          observation_covariances]))
 
-    def body(carry, inputs):
-        loglikelihood, state = carry
+    def body(state, inputs):
         observation, transition_covariance, observation_covariance = inputs
 
         sigma_points = get_sigma_points(state)
-
-        loglikelihood_increment, updated_state = update(observation_function, observation_covariance, sigma_points,
-                                                        state, observation)
-        updated_sigma_points = get_sigma_points(updated_state)
-
         predicted_state = predict(transition_function, transition_covariance,
-                                  updated_sigma_points)
-        return (loglikelihood + loglikelihood_increment, predicted_state), updated_state
+                                  sigma_points)
 
-    (loglikelihood, _), filtered_states = lax.scan(body,
-                                                   (0., initial_state),
-                                                   [observations,
-                                                    transition_covariances,
-                                                    observation_covariances],
-                                                   length=n_observations, unroll=10)
+        predicted_state_sigma_points = get_sigma_points(predicted_state)
+        updated_state = update(observation_function, observation_covariance, predicted_state_sigma_points,
+                               predicted_state, observation)
 
-    return loglikelihood, filtered_states
+        return updated_state, updated_state
+
+    _, filtered_states = lax.scan(body,
+                                  initial_state,
+                                  [observations,
+                                   transition_covariances,
+                                   observation_covariances],
+                                  length=n_observations)
+
+    return filtered_states
 
 
 def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
@@ -280,18 +272,19 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     cov_shape = transition_covariance.shape[0]
     zero = jnp.zeros(cov_shape, dtype=transition_covariance.dtype)
 
-    predicted_points, predicted_mvn = _transform(filtered_sigma_points.points,
+    predicted_points, predicted_mvn = _transform(filtered_sigma_points,
                                                  MVNormalParameters(zero, transition_covariance),
                                                  transition_function)
 
+
     cross_covariance = jnp.dot(
-        (predicted_points.points - predicted_mvn.mean.reshape(-1, 1)) * predicted_points.wm.reshape(1, -1),
-        filtered_sigma_points.points.T - filtered_state.mean.reshape(1, -1))
+        (predicted_points.points - predicted_mvn.mean.reshape(1, -1)).T * predicted_points.wm.reshape(1, -1),
+        filtered_sigma_points.points - filtered_state.mean.reshape(1, -1))
 
     gain = jlinalg.solve(predicted_mvn.cov, cross_covariance.T, sym_pos=True).T
 
-    mean_diff = previous_smoothed.mean - filtered_state.mean
-    cov_diff = previous_smoothed.cov - filtered_state.cov
+    mean_diff = previous_smoothed.mean - predicted_mvn.mean
+    cov_diff = previous_smoothed.cov - predicted_mvn.cov
 
     mean = filtered_state.mean + jnp.dot(gain, mean_diff)
     cov = filtered_state.cov + jnp.dot(gain, jnp.dot(cov_diff, gain.T))
