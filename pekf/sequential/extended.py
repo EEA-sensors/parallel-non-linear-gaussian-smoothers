@@ -130,8 +130,10 @@ def filter_routine(initial_state: MVNormalParameters,
         if prev_linearization_point is None:
             prev_linearization_point = state.mean
         predicted_state = predict(transition_function, transition_covariance, state, prev_linearization_point)
+        if linearization_point is None:
+            linearization_point = predicted_state.mean
         updated_state = update(observation_function, observation_covariance, predicted_state,
-                               observation)
+                               observation, linearization_point)
         return updated_state, updated_state
 
     if linearization_points is not None:
