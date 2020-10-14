@@ -6,6 +6,7 @@ from jax import lax, vmap, jacfwd
 
 from pekf.utils import MVNormalParameters
 from .operators import filtering_operator
+from ..cubature_common import transform, get_sigma_points
 
 
 def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, m0, P0, x_k_1, x_k):
@@ -28,8 +29,9 @@ def make_associative_filtering_params(observation_function, Rk, transition_funct
                     None)
 
 
-def _make_associative_filtering_params_first(observation_function, jac_observation_function, R, transition_function,
-                                             jac_transition_function, Q, m0, P0, y):
+def _make_associative_filtering_params_first(observation_function, R, transition_function, Q, initial_state, y):
+    initial_sigma_points = get_sigma_points(initial_state)
+    transform(initial_sigma_points, Q, transition_function)
     F = jac_transition_function(m0)
 
     m1 = transition_function(m0)
@@ -50,7 +52,7 @@ def _make_associative_filtering_params_first(observation_function, jac_observati
 
 
 def _make_associative_filtering_params_generic(observation_function, jac_observation_function, Rk, transition_function,
-                                               jac_transition_function, x_k_1, x_k, Qk_1, yk):
+                                               jac_transition_function, x_k_1, x_k, P_k_1, P_k, Qk_1, yk):
     F = jac_transition_function(x_k_1)
     H = jac_observation_function(x_k)
 
@@ -83,8 +85,8 @@ def filter_routine(initial_state: MVNormalParameters,
                    transition_covariance: jnp.ndarray,
                    observation_function: Callable,
                    observation_covariance: jnp.ndarray,
-                   linearization_points: jnp.ndarray = None):
-    """ Computes the predict-update routine of the Extended Kalman Filter equations
+                   linearisation_states: MVNormalParameters = None):
+    """ Computes the predict-update routine of the Cubature Kalman Filter equations
     using temporal parallelization and returns a series of filtered_states TODO:reference
 
     Parameters
@@ -101,8 +103,8 @@ def filter_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariance: (K, K) array
         observation error covariances for each time step
-    linearization_points: (n, D) array, optional
-        points at which to compute the jacobians.
+    linearisation_states: MVNormalParameters, optional
+        in the case of Sigma-Point .
 
     Returns
     -------
@@ -113,8 +115,8 @@ def filter_routine(initial_state: MVNormalParameters,
     n_observations = observations.shape[0]
     x_dim = initial_state.mean.shape[0]
     dtype = initial_state.mean.dtype
-    if linearization_points is None:
-        linearization_points = jnp.zeros((n_observations, x_dim), dtype=dtype)
+    if linearisation_states is None:
+        linearisation_states = jnp.zeros((n_observations, x_dim), dtype=dtype)
 
     @vmap
     def make_params(obs, i, x_k_1, x_k):
@@ -123,8 +125,8 @@ def filter_routine(initial_state: MVNormalParameters,
                                                  i, initial_state.mean,
                                                  initial_state.cov, x_k_1, x_k)
 
-    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearization_points[:-1]), 0)
-    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearization_points)
+    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearisation_points[:-1]), 0)
+    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearisation_points)
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Cs, etas, Js))
 
     return vmap(MVNormalParameters)(filtered_means, filtered_covariances)
