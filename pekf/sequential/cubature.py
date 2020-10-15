@@ -166,9 +166,9 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     cov_shape = transition_covariance.shape[0]
     zero = jnp.zeros(cov_shape, dtype=transition_covariance.dtype)
 
-    predicted_points, predicted_mvn = _transform(filtered_sigma_points,
-                                                 MVNormalParameters(zero, transition_covariance),
-                                                 transition_function)
+    predicted_points, predicted_mvn = transform(filtered_sigma_points,
+                                                MVNormalParameters(zero, transition_covariance),
+                                                transition_function)
 
     cross_covariance = jnp.dot(
         (predicted_points.points - predicted_mvn.mean.reshape(1, -1)).T * predicted_points.wm.reshape(1, -1),

@@ -60,5 +60,5 @@ def smoothing_operator(elem1, elem2):
 
     g = E2 @ g1 + g2
     E = E2 @ E1
-    L = E2 @ L1 @ E2 + L2
+    L = E2 @ L1 @ E2.T + L2
     return g, E, L

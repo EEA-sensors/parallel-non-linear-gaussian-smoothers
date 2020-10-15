@@ -16,7 +16,7 @@ def make_associative_filtering_params(observation_function, Rk, transition_funct
 
     def _first(_):
         return _make_associative_filtering_params_first(observation_function, jac_obs, Rk, transition_function,
-                                                        jac_trans, Qk_1, m0, P0, yk)
+                                                        jac_trans, Qk_1, m0, P0, x_k, yk)
 
     def _generic(_):
         return _make_associative_filtering_params_generic(observation_function, jac_obs, Rk, transition_function,
@@ -29,18 +29,21 @@ def make_associative_filtering_params(observation_function, Rk, transition_funct
 
 
 def _make_associative_filtering_params_first(observation_function, jac_observation_function, R, transition_function,
-                                             jac_transition_function, Q, m0, P0, y):
+                                             jac_transition_function, Q, m0, P0, x_k, y):
     F = jac_transition_function(m0)
 
     m1 = transition_function(m0)
     P1 = F @ P0 @ F.T + Q
 
-    H = jac_observation_function(m1)
+    H = jac_observation_function(x_k)
 
     S = H @ P1 @ H.T + R
     K = jlinalg.solve(S, H @ P1, sym_pos=True).T
     A = jnp.zeros(F.shape)
-    b = m1 + K @ (y - observation_function(m1))
+
+    alpha = observation_function(x_k) + H @ (m1 - x_k)
+
+    b = m1 + K @ (y - alpha)
     C = P1 - (K @ S @ K.T)
 
     eta = jnp.zeros(F.shape[0])

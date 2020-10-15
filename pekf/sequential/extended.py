@@ -181,7 +181,7 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
 
     jac_x = jacfwd(transition_function, 0)(linearization_point)
 
-    mean = transition_function(filtered_state.mean) + jnp.dot(jac_x, filtered_state.mean - linearization_point)
+    mean = transition_function(linearization_point) + jnp.dot(jac_x, filtered_state.mean - linearization_point)
     mean_diff = previous_smoothed.mean - mean
 
     cov = jnp.dot(jac_x, jnp.dot(filtered_state.cov, jac_x.T)) + transition_covariance
@@ -245,3 +245,60 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
                                   reverse=True)
 
     return smoothed_states
+
+
+def iterated_smoother_routine(initial_state: MVNormalParameters,
+                              observations: jnp.ndarray,
+                              transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+                              transition_covariances: jnp.ndarray,
+                              observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+                              observation_covariances: jnp.ndarray,
+                              initial_linearization_points: jnp.ndarray = None,
+                              n_iter: int = 100):
+    """
+    Computes the Gauss-Newton iterated extended Kalman smoother
+
+    Parameters
+    ----------
+    initial_state: MVNormalParameters
+        prior belief on the initial state distribution
+    observations: (n, K) array
+        array of n observations of dimension K
+    transition_function: callable :math:`f(x_t,\epsilon_t)\mapsto x_{t-1}`
+        transition function of the state space model
+    transition_covariances: (D, D) or (1, D, D) or (n, D, D) array
+        transition covariances for each time step, if passed only one, it is repeated n times
+    observation_function: callable :math:`h(x_t,\epsilon_t)\mapsto y_t`
+        observation function of the state space model
+    observation_covariances: (K, K) or (1, K, K) or (n, K, K) array
+        observation error covariances for each time step, if passed only one, it is repeated n times
+    initial_linearization_points: (n, K) array, optional
+        points at which to compute the jacobians durning the first pass.
+    n_iter: int
+        number of times the filter-smoother routine is computed
+
+    Returns
+    -------
+    iterated_smoothed_trajectories: MVNormalParameters
+        The result of the smoothing routine
+
+    """
+    n_observations = observations.shape[0]
+    transition_covariances, observation_covariances = list(map(
+        lambda z: make_matrices_parameters(z, n_observations),
+        [transition_covariances,
+         observation_covariances]))
+    if initial_linearization_points is None:
+        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
+                                         observation_function, observation_covariances, initial_linearization_points)
+        initial_linearization_points = smoother_routine(transition_function, transition_covariances, filtered_states,
+                                                        initial_linearization_points)
+
+    def body(linearization_points, _):
+        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
+                                         observation_function, observation_covariances, linearization_points.mean)
+        return smoother_routine(transition_function, transition_covariances, filtered_states,
+                                linearization_points.mean), None
+
+    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_points, jnp.arange(n_iter))
+    return iterated_smoothed_trajectories
