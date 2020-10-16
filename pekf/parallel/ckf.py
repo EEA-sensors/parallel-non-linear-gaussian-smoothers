@@ -91,8 +91,10 @@ def _make_associative_filtering_params_generic(observation_function, Rk, transit
     obs_points = observation_function(linearization_points.points)
     obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
     obs_mvn = get_mv_normal_parameters(obs_sigma_points)
-    update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
-                                                      obs_sigma_points, obs_mvn.mean)
+    update_cross_covariance = covariance_sigma_points(linearization_points,
+                                                      linearization_state.mean,
+                                                      obs_sigma_points,
+                                                      obs_mvn.mean)
 
     H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
     obs_mean_residual = obs_mvn.mean - jnp.dot(H, linearization_state.mean)

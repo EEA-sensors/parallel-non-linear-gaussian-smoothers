@@ -3,8 +3,10 @@ from typing import Callable
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap
+from jax.experimental.host_callback import id_print
+from pekf.parallel.ckf import filter_routine
 
-from pekf.utils import MVNormalParameters
+from pekf.utils import MVNormalParameters, make_matrices_parameters
 from .operators import smoothing_operator
 from ..cubature_common import get_sigma_points, SigmaPoints, get_mv_normal_parameters, covariance_sigma_points
 
@@ -32,16 +34,23 @@ def _make_associative_smoothing_params_generic(transition_function, Qk, filtered
     propagated_sigma_points = SigmaPoints(propagated_points, sigma_points.wm, sigma_points.wc)
     propagated_state = get_mv_normal_parameters(propagated_sigma_points)
 
-    pred_cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean,
+    pred_cross_covariance = covariance_sigma_points(sigma_points,
+                                                    linearization_state.mean,
                                                     propagated_sigma_points,
                                                     propagated_state.mean)
 
     F = jlinalg.solve(linearization_state.cov, pred_cross_covariance,
                       sym_pos=True).T  # Linearized transition function
+    F = id_print(jnp.max(jnp.abs(F)), result=F, what="F")
 
     Pp = Qk + propagated_state.cov + F @ (filtered_state.cov - linearization_state.cov) @ F.T
+    Pp = id_print(jnp.max(jnp.abs(Pp)), result=Pp, what="max Pp")
+    Pp = id_print(jnp.min(jnp.abs(Pp)), result=Pp, what="min Pp")
+    F = id_print(jnp.max(jnp.abs(F)), result=F, what="F")
 
     E = jlinalg.solve(Pp, F @ linearization_state.cov, sym_pos=True).T
+    E = id_print(jnp.max(jnp.abs(E)), result=E, what="E")
+
     g = filtered_state.mean - E @ (propagated_state.mean + F @ (filtered_state.mean - linearization_state.mean))
     # L = filtered_state.cov - E @ (propagated_state.cov + F @ (filtered_state.cov - linearization_state.cov)) @ E.T
     L = filtered_state.cov - E @ F @ filtered_state.cov
@@ -88,3 +97,58 @@ def smoother_routine(transition_function: Callable,
     smoothed_means, _, smoothed_covariances = lax.associative_scan(smoothing_operator, (gs, Es, Ls), reverse=True)
 
     return vmap(MVNormalParameters)(smoothed_means, smoothed_covariances)
+
+
+def iterated_smoother_routine(initial_state: MVNormalParameters,
+                              observations: jnp.ndarray,
+                              transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+                              transition_covariance: jnp.ndarray,
+                              observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
+                              observation_covariance: jnp.ndarray,
+                              initial_linearization_states: MVNormalParameters = None,
+                              n_iter: int = 100):
+    """
+    Computes the Gauss-Newton iterated cubature Kalman smoother
+
+    Parameters
+    ----------
+    initial_state: MVNormalParameters
+        prior belief on the initial state distribution
+    observations: (n, K) array
+        array of n observations of dimension K
+    transition_function: callable :math:`f(x_t,\epsilon_t)\mapsto x_{t-1}`
+        transition function of the state space model
+    transition_covariance: (D, D) array
+        transition covariances for each time step, if passed only one, it is repeated n times
+    observation_function: callable :math:`h(x_t,\epsilon_t)\mapsto y_t`
+        observation function of the state space model
+    observation_covariance: (K, K)  array
+        observation error covariances for each time step, if passed only one, it is repeated n times
+    initial_linearization_states: MVNormalParameters, optional
+        points at which to compute the jacobians durning the first pass.
+    n_iter: int
+        number of times the filter-smoother routine is computed
+
+    Returns
+    -------
+    iterated_smoothed_trajectories: MVNormalParameters
+        The result of the smoothing routine
+
+    """
+    n_observations = observations.shape[0]
+
+    if initial_linearization_states is None:
+        initial_linearization_means, initial_linearization_covs = list(map(
+            lambda z: make_matrices_parameters(z, n_observations),
+            [jnp.zeros_like(initial_state.mean),
+             jnp.empty_like(initial_state.cov)]))  # we won't use the covariance here
+        initial_linearization_states = MVNormalParameters(initial_linearization_means, initial_linearization_covs)
+
+    def body(linearization_points, _):
+        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariance,
+                                         observation_function, observation_covariance, linearization_points)
+        return smoother_routine(transition_function, transition_covariance, filtered_states,
+                                linearization_points), None
+
+    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
+    return iterated_smoothed_trajectories
