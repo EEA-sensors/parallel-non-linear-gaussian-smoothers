@@ -300,17 +300,16 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         lambda z: make_matrices_parameters(z, n_observations),
         [transition_covariances,
          observation_covariances]))
-    if initial_linearization_states is None:
-        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
-                                         observation_function, observation_covariances, initial_linearization_states)
-        initial_linearization_states = smoother_routine(transition_function, transition_covariances, filtered_states,
-                                                        initial_linearization_states)
+
 
     def body(linearization_points, _):
         filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
                                          observation_function, observation_covariances, linearization_points)
         return smoother_routine(transition_function, transition_covariances, filtered_states,
                                 linearization_points), None
+
+    if initial_linearization_states is None:
+        initial_linearization_states = body(None, None)[0]
 
     iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
     return iterated_smoothed_trajectories
