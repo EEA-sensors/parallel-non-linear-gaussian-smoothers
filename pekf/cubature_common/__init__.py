@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import Tuple, Callable
+from typing import Tuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -9,6 +9,48 @@ from ..utils import MVNormalParameters
 SigmaPoints = namedtuple(
     'SigmaPoints', ['points', 'wm', 'wc']
 )
+
+
+def mean_sigma_points(points):
+    """
+    Computes the mean of sigma points
+
+    Parameters
+    ----------
+    points: SigmaPoints
+        The sigma points
+
+    Returns
+    -------
+    mean: array_like
+        the mean of the sigma points
+    """
+    return jnp.dot(points.wm, points.points)
+
+
+def covariance_sigma_points(points_1, mean_1, points_2, mean_2):
+    """
+    Computes the covariance between two sets of sigma points
+
+    Parameters
+    ----------
+    points_1: SigmaPoints
+        first set of sigma points
+    mean_1: array_like
+        assumed mean of the first set of points
+    points_2: SigmaPoints
+        second set of sigma points
+    points_1: SigmaPoints
+        assumed mean of the second set of points
+
+    Returns
+    -------
+    cov: array_like
+        the covariance of the two sets
+    """
+    one = (points_1.points - mean_1.reshape(1, -1)).T * points_1.wc.reshape(1, -1)
+    two = points_2.points - mean_2.reshape(1, -1)
+    return jnp.dot(one, two)
 
 
 def cubature_weights(n_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -62,51 +104,18 @@ def get_sigma_points(mv_normal_parameters: MVNormalParameters) -> SigmaPoints:
     return SigmaPoints(sigma_points, wm, wc)
 
 
-def get_mv_normal_parameters(sigma_points: SigmaPoints, noise: np.ndarray) -> MVNormalParameters:
+def get_mv_normal_parameters(sigma_points: SigmaPoints) -> MVNormalParameters:
     """ Computes the MV Normal distribution parameters associated with the sigma points
 
     Parameters
     ----------
     sigma_points: SigmaPoints
         shape of sigma_points.points is (n_dim, 2*n_dim)
-    noise: (n_dim, n_dim) array
-        additive noise covariance matrix, if any
     Returns
     -------
     out: MVNormalParameters
         Mean and covariance of RV of dimension K computed from sigma-points
     """
-    mean = jnp.dot(sigma_points.wm, sigma_points.points)
-    diff = sigma_points.points - mean.reshape(1, -1)
-    cov = jnp.dot(sigma_points.wc.reshape(1, -1) * diff.T, diff) + noise
-    return MVNormalParameters(mean, cov=cov)
-
-
-def transform(sigma_points: SigmaPoints,
-              noise: SigmaPoints or MVNormalParameters,
-              f: Callable) -> Tuple[SigmaPoints, MVNormalParameters]:
-    """ Apply a function on the sigma points.
-
-    Parameters
-    ----------
-    sigma_points: SigmaPoints
-        sigma points to be transformed by f
-    noise: SigmaPoints or MVNormalParameters
-        if is_additive is True, then this is SigmaPoints, else it's assumed to be a MVNormalParameters
-    f: Callable
-        :math: `f(x)`
-
-    Returns
-    -------
-    propagated_sigma_points: SigmaPoints
-        sigma points after transformation
-    propagated_mvn_parameters: MVNormalParameters
-        approximate mnv from the propagated sigma points
-    """
-
-    propagated_points = f(sigma_points.points)
-    propagated_sigma_points = SigmaPoints(propagated_points, sigma_points.wm, sigma_points.wc)
-
-    propagated_mvn_parameters = get_mv_normal_parameters(propagated_sigma_points, noise.cov)
-
-    return propagated_sigma_points, propagated_mvn_parameters
+    m = mean_sigma_points(sigma_points)
+    cov = covariance_sigma_points(sigma_points, m, sigma_points, m)
+    return MVNormalParameters(m, cov=cov)

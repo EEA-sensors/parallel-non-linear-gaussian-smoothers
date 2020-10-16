@@ -2,22 +2,21 @@ from typing import Callable
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
-from jax import lax, vmap, jacfwd
+from jax import lax, vmap
 
 from pekf.utils import MVNormalParameters
 from .operators import smoothing_operator
+from ..cubature_common import get_sigma_points, SigmaPoints, get_mv_normal_parameters, covariance_sigma_points
 
 
-def make_associative_smoothing_params(transition_function, Qk, i, n, mk, Pk, xk):
+def make_associative_smoothing_params(transition_function, Qk, i, n, filtered_state, linearization_state):
     predicate = i == n - 1
 
-    jac_trans = jacfwd(transition_function, 0)
-
     def _last(_):
-        return mk, jnp.zeros_like(Pk), Pk
+        return filtered_state.mean, jnp.zeros_like(filtered_state.cov), filtered_state.cov
 
     def _generic(_):
-        return _make_associative_smoothing_params_generic(transition_function, jac_trans, Qk, mk, Pk, xk)
+        return _make_associative_smoothing_params_generic(transition_function, Qk, filtered_state, linearization_state)
 
     return lax.cond(predicate,
                     _last,  # take initial
@@ -25,22 +24,35 @@ def make_associative_smoothing_params(transition_function, Qk, i, n, mk, Pk, xk)
                     None)
 
 
-def _make_associative_smoothing_params_generic(transition_function, jac_transition_function, Qk, mk, Pk, xk):
-    F = jac_transition_function(xk)
-    Pp = F @ Pk @ F.T + Qk
+def _make_associative_smoothing_params_generic(transition_function, Qk, filtered_state, linearization_state):
+    # Prediction part
+    sigma_points = get_sigma_points(linearization_state)
 
-    E = jlinalg.solve(Pp, F @ Pk, sym_pos=True).T
+    propagated_points = transition_function(sigma_points.points)
+    propagated_sigma_points = SigmaPoints(propagated_points, sigma_points.wm, sigma_points.wc)
+    propagated_state = get_mv_normal_parameters(propagated_sigma_points)
 
-    g = mk - E @ (transition_function(xk) + F @ (mk - xk))
-    L = Pk - E @ F @ Pk
+    pred_cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean,
+                                                    propagated_sigma_points,
+                                                    propagated_state.mean)
 
-    return g, E, L
+    F = jlinalg.solve(linearization_state.cov, pred_cross_covariance,
+                      sym_pos=True).T  # Linearized transition function
+
+    Pp = Qk + propagated_state.cov + F @ (filtered_state.cov - linearization_state.cov) @ F.T
+
+    E = jlinalg.solve(Pp, F @ linearization_state.cov, sym_pos=True).T
+    g = filtered_state.mean - E @ (propagated_state.mean + F @ (filtered_state.mean - linearization_state.mean))
+    # L = filtered_state.cov - E @ (propagated_state.cov + F @ (filtered_state.cov - linearization_state.cov)) @ E.T
+    L = filtered_state.cov - E @ F @ filtered_state.cov
+
+    return g, E, 0.5 * (L + L.T)
 
 
 def smoother_routine(transition_function: Callable,
                      transition_covariance: jnp.ndarray,
                      filtered_states: MVNormalParameters,
-                     linearisation_points: jnp.ndarray = None):
+                     linearization_states: MVNormalParameters = None):
     """ Computes the predict-update routine of the Extended Kalman Filter equations
     using temporal parallelization and returns a series of filtered_states TODO:reference
 
@@ -53,8 +65,8 @@ def smoother_routine(transition_function: Callable,
         observation error covariances for each time step
     filtered_states: MVNormalParameters
         states resulting from (iterated) EKF
-    linearisation_points: (n, D) array, optional
-        points at which to compute the jacobians, typically previous run.
+    linearization_states: MVNormalParameters, optional
+        states at which to compute the cubature linearized functions
 
     Returns
     -------
@@ -64,16 +76,14 @@ def smoother_routine(transition_function: Callable,
     """
     n_observations = filtered_states.mean.shape[0]
 
-    if linearisation_points is None:
-        linearisation_points = filtered_states.mean
-
     @vmap
-    def make_params(i, mk, Pk, xk):
+    def make_params(i, filtered_state, linearization_state):
+        if linearization_state is None:
+            linearization_state = filtered_state
         return make_associative_smoothing_params(transition_function, transition_covariance,
-                                                 i, n_observations, mk, Pk, xk)
+                                                 i, n_observations, filtered_state, linearization_state)
 
-    gs, Es, Ls = make_params(jnp.arange(n_observations), filtered_states.mean,
-                             filtered_states.cov, linearisation_points)
+    gs, Es, Ls = make_params(jnp.arange(n_observations), filtered_states, linearization_states)
 
     smoothed_means, _, smoothed_covariances = lax.associative_scan(smoothing_operator, (gs, Es, Ls), reverse=True)
 

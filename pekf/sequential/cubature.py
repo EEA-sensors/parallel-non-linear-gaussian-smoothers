@@ -5,18 +5,8 @@ import jax.scipy.linalg as jlinalg
 from jax import lax
 from jax.lax import cond
 
-from ..cubature_common import SigmaPoints, get_sigma_points
+from ..cubature_common import SigmaPoints, get_sigma_points, get_mv_normal_parameters, covariance_sigma_points
 from ..utils import MVNormalParameters, make_matrices_parameters
-
-
-def _mean(points):
-    return jnp.dot(points.wm, points.points)
-
-
-def _covariance(points_1, mean_1, points_2, mean_2):
-    one = (points_1.points - mean_1.reshape(1, -1)).T * points_1.wc.reshape(1, -1)
-    two = points_2.points - mean_2.reshape(1, -1)
-    return jnp.dot(one, two)
 
 
 def predict(transition_function: Callable,
@@ -45,7 +35,7 @@ def predict(transition_function: Callable,
     mvn_parameters: MVNormalParameters
         Propagated approximate Normal distribution
 
-    A: array_like
+    F: array_like
         returned if return_linearized_transition is True
     """
     if linearization_state is None:
@@ -53,22 +43,22 @@ def predict(transition_function: Callable,
 
     sigma_points = get_sigma_points(linearization_state)
     propagated_points = transition_function(sigma_points.points)
-    propagated_sigma_points = SigmaPoints(propagated_points, sigma_points.wm, sigma_points.wc)
+    propagated_sigma_points = SigmaPoints(propagated_points,
+                                          sigma_points.wm,
+                                          sigma_points.wc)
 
-    propagated_sigma_points_mean = _mean(propagated_sigma_points)
-    propagated_sigma_points_cov = _covariance(propagated_sigma_points, propagated_sigma_points_mean,
-                                              propagated_sigma_points, propagated_sigma_points_mean)
-    cross_covariance = _covariance(sigma_points, linearization_state.mean, propagated_sigma_points,
-                                   propagated_sigma_points_mean)
+    propagated_state = get_mv_normal_parameters(propagated_sigma_points)
+    cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean, propagated_sigma_points,
+                                               propagated_state.mean)
 
-    A = jlinalg.solve(linearization_state.cov, cross_covariance, sym_pos=True).T  # Linearized transition function
-    b = propagated_sigma_points_mean - jnp.dot(A, linearization_state.mean)  # Linearized offset
+    F = jlinalg.solve(linearization_state.cov, cross_covariance, sym_pos=True).T  # Linearized transition function
+    b = propagated_state.mean - jnp.dot(F, linearization_state.mean)  # Linearized offset
 
-    mean = A @ previous_state.mean + b
-    cov = transition_covariance + propagated_sigma_points_cov + A @ (previous_state.cov - linearization_state.cov) @ A.T
+    mean = F @ previous_state.mean + b
+    cov = transition_covariance + propagated_state.cov + F @ (previous_state.cov - linearization_state.cov) @ F.T
     if return_linearized_transition:
-        return MVNormalParameters(mean, cov), A
-    return MVNormalParameters(mean, cov)
+        return MVNormalParameters(mean, cov), F
+    return MVNormalParameters(mean, 0.5 * (cov + cov.T))
 
 
 def update(observation_function: Callable,
@@ -102,17 +92,16 @@ def update(observation_function: Callable,
     obs_points = observation_function(sigma_points.points)
     obs_sigma_points = SigmaPoints(obs_points, sigma_points.wm, sigma_points.wc)
 
-    obs_sigma_points_mean = _mean(obs_sigma_points)
-    obs_sigma_points_cov = _covariance(obs_sigma_points, obs_sigma_points_mean,
-                                       obs_sigma_points, obs_sigma_points_mean)
-    cross_covariance = _covariance(sigma_points, linearization_state.mean, obs_sigma_points,
-                                   obs_sigma_points_mean)
+    obs_state = get_mv_normal_parameters(obs_sigma_points)
+    cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean, obs_sigma_points,
+                                               obs_state.mean)
 
     H = jlinalg.solve(linearization_state.cov, cross_covariance, sym_pos=True).T  # linearized observation function
-    d = obs_sigma_points_mean - jnp.dot(H, linearization_state.mean)  # linearized observation offset
+
+    d = obs_state.mean - jnp.dot(H, linearization_state.mean)  # linearized observation offset
 
     residual_cov = H @ (predicted_state.cov - linearization_state.cov) @ H.T + \
-                   observation_covariance + obs_sigma_points_cov
+                   observation_covariance + obs_state.cov
 
     gain = jlinalg.solve(residual_cov, H @ predicted_state.cov).T
 
@@ -121,7 +110,7 @@ def update(observation_function: Callable,
     mean = predicted_state.mean + gain @ (observation - predicted_observation)
     cov = predicted_state.cov - gain @ residual_cov @ gain.T
 
-    return MVNormalParameters(mean, cov)
+    return MVNormalParameters(mean, 0.5 * (cov + cov.T))
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -212,11 +201,11 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     smoothed_state: MVNormalParameters
         smoothed state
     """
-    predicted_state, A = predict(transition_function, transition_covariance, filtered_state, linearization_state, True)
-    smoothing_gain = jnp.linalg.solve(predicted_state.cov, A @ filtered_state.cov).T
+    predicted_state, F = predict(transition_function, transition_covariance, filtered_state, linearization_state, True)
+    smoothing_gain = jnp.linalg.solve(predicted_state.cov, F @ filtered_state.cov).T
     mean = filtered_state.mean + smoothing_gain @ (previous_smoothed.mean - predicted_state.mean)
     cov = filtered_state.cov + smoothing_gain @ (previous_smoothed.cov - predicted_state.cov) @ smoothing_gain.T
-    return MVNormalParameters(mean, cov)
+    return MVNormalParameters(mean, 0.5 * (cov + cov.T))
 
 
 def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],

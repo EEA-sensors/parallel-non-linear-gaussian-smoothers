@@ -2,26 +2,25 @@ from typing import Callable
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
-from jax import lax, vmap, jacfwd
+from jax import lax, vmap
 
-from pekf.utils import MVNormalParameters
+from pekf.utils import MVNormalParameters, make_matrices_parameters
 from .operators import filtering_operator
-from ..cubature_common import transform, get_sigma_points
+from ..cubature_common import get_sigma_points, get_mv_normal_parameters, covariance_sigma_points, SigmaPoints
 
 
-def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, m0, P0, x_k_1, x_k):
+def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, initial_state,
+                                      prev_linearization_state, linearization_state):
+
     predicate = i == 0
 
-    jac_obs = jacfwd(observation_function, 0)
-    jac_trans = jacfwd(transition_function, 0)
-
     def _first(_):
-        return _make_associative_filtering_params_first(observation_function, jac_obs, Rk, transition_function,
-                                                        jac_trans, Qk_1, m0, P0, yk)
+        return _make_associative_filtering_params_first(observation_function, Rk, transition_function, Qk_1,
+                                                        initial_state, linearization_state, yk)
 
     def _generic(_):
-        return _make_associative_filtering_params_generic(observation_function, jac_obs, Rk, transition_function,
-                                                          jac_trans, x_k_1, x_k, Qk_1, yk)
+        return _make_associative_filtering_params_generic(observation_function, Rk, transition_function, Qk_1,
+                                                          prev_linearization_state, linearization_state, yk)
 
     return lax.cond(predicate,
                     _first,  # take initial
@@ -29,54 +28,91 @@ def make_associative_filtering_params(observation_function, Rk, transition_funct
                     None)
 
 
-def _make_associative_filtering_params_first(observation_function, R, transition_function, Q, initial_state, y):
+def _make_associative_filtering_params_first(observation_function, R, transition_function, Q, initial_state,
+                                             linearization_state, y):
+    # Prediction part
     initial_sigma_points = get_sigma_points(initial_state)
-    transform(initial_sigma_points, Q, transition_function)
-    F = jac_transition_function(m0)
+    propagated_points = transition_function(initial_sigma_points.points)
+    propagated_sigma_points = SigmaPoints(propagated_points, initial_sigma_points.wm, initial_sigma_points.wc)
+    propagated_state = get_mv_normal_parameters(propagated_sigma_points)
 
-    m1 = transition_function(m0)
-    P1 = F @ P0 @ F.T + Q
+    pred_cross_covariance = covariance_sigma_points(initial_sigma_points, initial_state.mean, propagated_sigma_points,
+                                                    propagated_state.mean)
 
-    H = jac_observation_function(m1)
+    F = jlinalg.solve(initial_state.cov, pred_cross_covariance, sym_pos=True).T  # Linearized transition function
 
-    S = H @ P1 @ H.T + R
+    m1 = propagated_state.mean
+    P1 = propagated_state.cov + Q
+
+    # Update part
+    linearization_points = get_sigma_points(linearization_state)
+    obs_points = observation_function(linearization_points.points)
+    obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
+    obs_mvn = get_mv_normal_parameters(obs_sigma_points)
+    update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
+                                                      obs_sigma_points, obs_mvn.mean)
+
+    H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
+    d = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
+    predicted_observation = H @ m1 + d
+
+    S = H @ (P1 - linearization_state.cov) @ H.T + R + obs_mvn.cov
     K = jlinalg.solve(S, H @ P1, sym_pos=True).T
     A = jnp.zeros(F.shape)
-    b = m1 + K @ (y - observation_function(m1))
-    C = P1 - (K @ S @ K.T)
+    b = m1 + K @ (y - predicted_observation)
+    C = P1 - K @ S @ K.T
 
     eta = jnp.zeros(F.shape[0])
     J = jnp.zeros(F.shape)
 
-    return A, b, C, eta, J
+    return A, b, 0.5 * (C + C.T), eta, J
 
 
-def _make_associative_filtering_params_generic(observation_function, jac_observation_function, Rk, transition_function,
-                                               jac_transition_function, x_k_1, x_k, P_k_1, P_k, Qk_1, yk):
-    F = jac_transition_function(x_k_1)
-    H = jac_observation_function(x_k)
+def _make_associative_filtering_params_generic(observation_function, Rk, transition_function, Qk_1,
+                                               prev_linearization_state, linearization_state, yk):
+    # Prediction part
+    sigma_points = get_sigma_points(prev_linearization_state)
 
-    F_x_k_1 = F @ x_k_1
-    x_k_hat = transition_function(x_k_1)
+    propagated_points = transition_function(sigma_points.points)
+    propagated_sigma_points = SigmaPoints(propagated_points, sigma_points.wm, sigma_points.wc)
+    propagated_state = get_mv_normal_parameters(propagated_sigma_points)
 
-    alpha = observation_function(x_k) + H @ (x_k_hat - F_x_k_1 - x_k)
-    residual = yk - alpha
-    HQ = H @ Qk_1
+    pred_cross_covariance = covariance_sigma_points(sigma_points, prev_linearization_state.mean,
+                                                    propagated_sigma_points,
+                                                    propagated_state.mean)
 
-    S = HQ @ H.T + Rk
+    F = jlinalg.solve(prev_linearization_state.cov, pred_cross_covariance,
+                      sym_pos=True).T  # Linearized transition function
+    pred_mean_residual = propagated_state.mean - F @ prev_linearization_state.mean
+    pred_cov_residual = propagated_state.cov - F @ prev_linearization_state.cov @ F.T + Qk_1
+
+    # Update part
+    linearization_points = get_sigma_points(linearization_state)
+    obs_points = observation_function(linearization_points.points)
+    obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
+    obs_mvn = get_mv_normal_parameters(obs_sigma_points)
+    update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
+                                                      obs_sigma_points, obs_mvn.mean)
+
+    H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
+    obs_mean_residual = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
+    obs_cov_residual = obs_mvn.cov - H @ linearization_state.cov @ H.T
+
+    S = H @ pred_cov_residual @ H.T + Rk + obs_cov_residual  # total residual covariance
+    total_obs_residual = (yk - H @ pred_mean_residual - obs_mean_residual)
     S_invH = jlinalg.solve(S, H, sym_pos=True)
-    K = (S_invH @ Qk_1).T
-    A = F - K @ H @ F
-    b = K @ residual + x_k_hat - F_x_k_1
-    C = Qk_1 - K @ H @ Qk_1
 
-    HF = H @ F
+    K = (S_invH @ pred_cov_residual).T
+    A = F - K @ H @ F
+    b = pred_mean_residual + K @ total_obs_residual
+    C = pred_cov_residual - K @ S @ K.T
 
     temp = (S_invH @ F).T
-    eta = temp @ residual
-    J = temp @ HF
+    HF = H @ F
 
-    return A, b, C, eta, J
+    eta = temp @ total_obs_residual
+    J = temp @ HF
+    return A, b, 0.5 * (C + C.T), eta, J
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -85,7 +121,7 @@ def filter_routine(initial_state: MVNormalParameters,
                    transition_covariance: jnp.ndarray,
                    observation_function: Callable,
                    observation_covariance: jnp.ndarray,
-                   linearisation_states: MVNormalParameters = None):
+                   linearization_states: MVNormalParameters = None):
     """ Computes the predict-update routine of the Cubature Kalman Filter equations
     using temporal parallelization and returns a series of filtered_states TODO:reference
 
@@ -103,7 +139,7 @@ def filter_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariance: (K, K) array
         observation error covariances for each time step
-    linearisation_states: MVNormalParameters, optional
+    linearization_states: MVNormalParameters, optional
         in the case of Sigma-Point .
 
     Returns
@@ -115,18 +151,23 @@ def filter_routine(initial_state: MVNormalParameters,
     n_observations = observations.shape[0]
     x_dim = initial_state.mean.shape[0]
     dtype = initial_state.mean.dtype
-    if linearisation_states is None:
-        linearisation_states = jnp.zeros((n_observations, x_dim), dtype=dtype)
 
+    if linearization_states is None:
+        linearization_mean = jnp.zeros((n_observations, x_dim), dtype=dtype)
+        linearization_cov = make_matrices_parameters(jnp.eye(x_dim, dtype=dtype), n_observations)
+        linearization_states = MVNormalParameters(linearization_mean, linearization_cov)
     @vmap
-    def make_params(obs, i, x_k_1, x_k):
-        return make_associative_filtering_params(observation_function, observation_covariance,
-                                                 transition_function, transition_covariance, obs,
-                                                 i, initial_state.mean,
-                                                 initial_state.cov, x_k_1, x_k)
+    def make_params(obs, i, prev_linearization_state, linearisation_state):
+        return make_associative_filtering_params(observation_function, observation_covariance, transition_function,
+                                                 transition_covariance, obs, i, initial_state,
+                                                 prev_linearization_state, linearisation_state)
 
-    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearisation_points[:-1]), 0)
-    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearisation_points)
+    x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearization_states.mean[:-1]), 0)
+    P_k_1_s = jnp.concatenate((initial_state.cov.reshape(1, x_dim, x_dim), linearization_states.cov[:-1]), 0)
+    prev_linearization_states = MVNormalParameters(x_k_1_s, P_k_1_s)
+
+    As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), prev_linearization_states,
+                                       linearization_states)
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Cs, etas, Js))
 
     return vmap(MVNormalParameters)(filtered_means, filtered_covariances)
