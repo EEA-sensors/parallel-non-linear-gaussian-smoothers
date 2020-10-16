@@ -11,7 +11,6 @@ from ..cubature_common import get_sigma_points, get_mv_normal_parameters, covari
 
 def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, initial_state,
                                       prev_linearization_state, linearization_state):
-
     predicate = i == 0
 
     def _first(_):
@@ -158,6 +157,7 @@ def filter_routine(initial_state: MVNormalParameters,
         linearization_mean = jnp.zeros((n_observations, x_dim), dtype=dtype)
         linearization_cov = make_matrices_parameters(jnp.eye(x_dim, dtype=dtype), n_observations)
         linearization_states = MVNormalParameters(linearization_mean, linearization_cov)
+
     @vmap
     def make_params(obs, i, prev_linearization_state, linearisation_state):
         return make_associative_filtering_params(observation_function, observation_covariance, transition_function,
