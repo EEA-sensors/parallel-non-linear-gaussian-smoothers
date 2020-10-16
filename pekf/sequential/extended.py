@@ -32,7 +32,8 @@ def predict(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     out: MVNormalParameters
         Predicted state
     """
-
+    if linearization_point is None:
+        linearization_point = prior.mean
     jac_x = jacfwd(transition_function, 0)(linearization_point)
     cov = jnp.dot(jac_x, jnp.dot(prior.cov, jac_x.T)) + transition_covariance
     mean = transition_function(linearization_point)
@@ -67,7 +68,8 @@ def update(observation_function: Callable[[jnp.ndarray], jnp.ndarray],
     updated_state: MVNormalParameters
         filtered state
     """
-
+    if linearization_point is None:
+        linearization_point = predicted.mean
     jac_x = jacfwd(observation_function, 0)(linearization_point)
 
     obs_mean = observation_function(linearization_point) + jnp.dot(jac_x, predicted.mean - linearization_point)
@@ -125,27 +127,19 @@ def filter_routine(initial_state: MVNormalParameters,
          observation_covariances]))
 
     def body(carry, inputs):
-        state = carry
-        observation, transition_covariance, observation_covariance, prev_linearization_point, linearization_point = inputs
-        if prev_linearization_point is None:
-            prev_linearization_point = state.mean
+        state, prev_linearization_point = carry
+        observation, transition_covariance, observation_covariance, linearization_point = inputs
         predicted_state = predict(transition_function, transition_covariance, state, prev_linearization_point)
-        if linearization_point is None:
-            linearization_point = predicted_state.mean
         updated_state = update(observation_function, observation_covariance, predicted_state,
                                observation, linearization_point)
-        return updated_state, updated_state
+        return (updated_state, linearization_point), updated_state
 
-    if linearization_points is not None:
-        x_k_1_s = jnp.concatenate((initial_state.mean.reshape(1, -1), linearization_points[:-1]), 0)
-    else:
-        x_k_1_s = None
+    initial_linearization_point = initial_state.mean if linearization_points is not None else None
     _, filtered_states = lax.scan(body,
-                                  initial_state,
+                                  (initial_state, initial_linearization_point),
                                   [observations,
                                    transition_covariances,
                                    observation_covariances,
-                                   x_k_1_s,
                                    linearization_points],
                                   length=n_observations)
 
