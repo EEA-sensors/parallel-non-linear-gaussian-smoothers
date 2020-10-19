@@ -65,5 +65,6 @@ For more examples, see the [notebooks](https://github.com/EEA-sensors/parallelEK
 References
 ----------
 
-[1] S. Särkkä. *Bayesian Filtering and Smoothing.*  In: Cambridge University Press 2013.
-[2] S Särkkä and A. F. García-Fernández. *Temporal Parallelization of Bayesian Smoothers.* In: IEEE Transactions on Automatic Control 2020.
+[1] S. Särkkä and A. F. García-Fernández. *Temporal Parallelization of Bayesian Smoothers.* In: IEEE Transactions on Automatic Control 2020.
+
+[2] F. Yaghoobi and A. Corenflos and S. Hassan and S. Särkkä. *Temporal Parallelization of Bayesian Smoothers.*
