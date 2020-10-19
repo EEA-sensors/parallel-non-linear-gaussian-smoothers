@@ -70,6 +70,34 @@ def _observation_function(x, s1, s2):
                       jnp.arctan2(x[1] - s2[1], x[0] - s2[0])])
 
 
+@partial(jnp.vectorize, excluded=(1, 2), signature="(m)->(d)")
+def inverse_bearings(observation, s1, s2):
+    """
+    Inverse the bearings observation to the location as if there was no noise,
+    This is only used to provide an initial point for the linearization of the IEKS and ICKS.
+
+    Parameters
+    ----------
+    observation: (2) array
+        The bearings observation
+    s1: (2) array
+        The first sensor position
+    s2: (2) array
+        The second sensor position
+
+    Returns
+    -------
+    out: (2) array
+        The inversed position of the state
+    """
+    tan_theta = jnp.tan(observation)
+    A = jnp.array([[tan_theta[0], -1],
+                   [tan_theta[1], -1]])
+    b = jnp.array([s1[0] * tan_theta[0] - s1[1],
+                   s2[0] * tan_theta[1] - s2[1]])
+    return jnp.linalg.solve(A, b)
+
+
 def make_parameters(qc, qw, r, dt, s1, s2):
     """ Discretizes the model with continuous transition noise qc, for step-size dt.
     The model is described in "Multitarget-multisensor tracking: principles and techniques" by
@@ -134,7 +162,7 @@ def _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states):
     # return true_states, observations
 
 
-def get_data(x0, dt, r, T, s1, s2, random_state=None):
+def get_data(x0, dt, r, T, s1, s2, q=10., random_state=None):
     """
 
     Parameters
@@ -151,6 +179,8 @@ def get_data(x0, dt, r, T, s1, s2, random_state=None):
         The location of the first sensor
     s2: array_like
         The location of the second sensor
+    q: float
+        noise of the angular momentum
     random_state: np.random.RandomState or int, optional
         numpy random state
 
@@ -165,7 +195,7 @@ def get_data(x0, dt, r, T, s1, s2, random_state=None):
     """
     if random_state is None or isinstance(random_state, int):
         random_state = np.random.RandomState(random_state)
-    a_s = 1 + 10. * dt * np.cumsum(random_state.randn(T))
+    a_s = 1 + q * dt * np.cumsum(random_state.randn(T))
     a_s = a_s.astype(np.float32)
     s1 = np.asarray(s1, dtype=np.float32)
     s2 = np.asarray(s2, dtype=np.float32)
