@@ -1,4 +1,4 @@
-# parallel Filtering and Smoothing
+# Parallel Filtering and Smoothing
 
 Temporal Parallelization of non-linear Filtering and Smoothing <cite>[2-3]</cite> implemented using JAX methods.
 
