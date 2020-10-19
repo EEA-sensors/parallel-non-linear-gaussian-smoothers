@@ -30,8 +30,8 @@ Installation
     Run `python setup.py [install|develop] --no-deps` depending on the level of installation you want
     Manually install the dependencies `jax` and `jaxlib`, and for examples only `matplotlib`, `numba`, `tqdm`
 
-Example (BETA)
---------------
+Example
+-------
 
 ```python
 from pekf.parallel import ieks
