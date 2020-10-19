@@ -24,7 +24,7 @@ Installation
     Clone https://github.com/EEA-sensors/parallelEKF.git
     Run `pip install -r requirements.txt -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
     Run `python setup.py [install|develop]` depending on the level of installation you want
- - Without GPU support
+- Without GPU support
   - By cloning
     Clone https://github.com/EEA-sensors/parallelEKF.git
     Run `python setup.py [install|develop] --no-deps` depending on the level of installation you want
