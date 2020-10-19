@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
 
-from pekf.utils import MVNormalParameters, make_matrices_parameters
+from pekf.utils import MVNormalParameters
 from .ekf import filter_routine
 from .operators import smoothing_operator
 
@@ -87,7 +87,7 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
                               transition_covariance: jnp.ndarray,
                               observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                               observation_covariance: jnp.ndarray,
-                              initial_linearization_states: MVNormalParameters = None,
+                              initial_linearization_points: jnp.ndarray = None,
                               n_iter: int = 100):
     """
     Computes the Gauss-Newton iterated extended Kalman smoother
@@ -106,7 +106,7 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariance: (K, K)  array
         observation error covariances for each time step, if passed only one, it is repeated n times
-    initial_linearization_states: MVNormalParameters, optional
+    initial_linearization_points: (N, D) array, optional
         points at which to compute the jacobians durning the first pass.
     n_iter: int
         number of times the filter-smoother routine is computed
@@ -117,14 +117,10 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         The result of the smoothing routine
 
     """
-    n_observations = observations.shape[0]
 
-    if initial_linearization_points is None:
-        initial_linearization_means, initial_linearization_covs = list(map(
-            lambda z: make_matrices_parameters(z, n_observations),
-            [jnp.zeros_like(initial_state.mean),
-             jnp.empty_like(initial_state.cov)]))  # we won't use the covariance here
-        initial_linearization_points = MVNormalParameters(initial_linearization_means, initial_linearization_covs)
+    n_observations = observations.shape[0]
+    x_dim = initial_state.mean.shape[0]
+    dtype = initial_state.mean.dtype
 
     def body(linearization_points, _):
         if linearization_points is not None:
@@ -134,8 +130,12 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         return smoother_routine(transition_function, transition_covariance, filtered_states,
                                 linearization_points), None
 
-    if initial_linearization_states is None:
+    if initial_linearization_points is None:
         initial_linearization_states = body(None, None)[0]
+    else:
+        initial_linearization_states = MVNormalParameters(initial_linearization_points, jnp.empty((n_observations,
+                                                                                                   x_dim,
+                                                                                                   x_dim), dtype))
 
     iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
     return iterated_smoothed_trajectories
