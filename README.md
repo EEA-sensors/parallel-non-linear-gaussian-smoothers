@@ -60,7 +60,7 @@ iterated_smoothed_trajectories = ieks(initial_guess,
 
 ```
 
-For more examples, see the [notebooks](https://github.com/EEA-sensors/parallelEKF/tree/master/notebooks)
+For more examples, see the [notebooks](https://github.com/EEA-sensors/parallelEKF/tree/master/notebooks).
 
 Acknowlegments
 --------------
