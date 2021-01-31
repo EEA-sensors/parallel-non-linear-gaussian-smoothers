@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap
 
-from pekf.parallel.ckf import filter_routine
-from pekf.utils import MVNormalParameters
+from parsmooth.parallel.ckf import filter_routine
+from parsmooth.utils import MVNormalParameters
 from .operators import smoothing_operator
 from ..cubature_common import get_sigma_points, SigmaPoints, get_mv_normal_parameters, covariance_sigma_points
 

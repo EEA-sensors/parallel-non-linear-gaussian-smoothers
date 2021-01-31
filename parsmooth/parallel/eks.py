@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
 
-from pekf.utils import MVNormalParameters
+from parsmooth.utils import MVNormalParameters
 from .ekf import filter_routine
 from .operators import smoothing_operator
 

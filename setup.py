@@ -1,6 +1,6 @@
 # Author: Adrien Corenflos
 
-"""Install pekf."""
+"""Install parsmooth."""
 
 from setuptools import setup, find_packages
 
@@ -8,7 +8,7 @@ with open('requirements.txt') as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='pekf',
+    name='parsmooth',
     version='0.1',
     description='Parallel Extended Kalman Filter.',
     author='Adrien Corenflos',

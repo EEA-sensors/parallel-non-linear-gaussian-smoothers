@@ -33,8 +33,8 @@ Example
 -------
 
 ```python
-from pekf.parallel import ieks
-from pekf.utils import MVNormalParameters
+from parsmooth.parallel import ieks
+from parsmooth.utils import MVNormalParameters
 
 initial_guess = MVNormalParameters(...)
 data = ...
