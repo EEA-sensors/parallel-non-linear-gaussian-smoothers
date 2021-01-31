@@ -63,7 +63,7 @@ For more examples, see the [notebooks](https://github.com/EEA-sensors/parallelEK
 
 Acknowlegments
 --------------
-This JAX-based code was created by [Adrien Corenflos](https://adriencorenflos.github.io/) to implement the original idea by [Fatemeh Yaghoobi](https://fatameh-yaghoobi.github.io/) [2] who provided the initial code for the parallelized extended Kalman filter in pure Python. The sequential cubature filtering code was adapted from some original code by [Zheng Zhao](https://users.aalto.fi/~zhaoz1/)
+This JAX-based code was created by [Adrien Corenflos](https://adriencorenflos.github.io/) to implement the original idea by [Fatemeh Yaghoobi](https://fatameh-yaghoobi.github.io/) [2] who provided the initial code for the parallelized extended Kalman filter in pure Python. The sequential cubature filtering code was adapted from some original code by [Zheng Zhao](https://users.aalto.fi/~zhaoz1/).
 
 References
 ----------
