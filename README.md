@@ -70,4 +70,4 @@ References
 
 [1] S. Särkkä and A. F. García-Fernández. *Temporal Parallelization of Bayesian Smoothers.* In: IEEE Transactions on Automatic Control 2020.
 
-[2] F. Yaghoobi and A. Corenflos and S. Hassan and S. Särkkä. *Parallel Iterated Extended and Sigma-Points Kalman Smoothers.*
+[2] F. Yaghoobi and A. Corenflos and S. Hassan and S. Särkkä. *Parallel Iterated Extended and Sigma-Points Kalman Smoothers.* To appear in Proceedings of IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP).
