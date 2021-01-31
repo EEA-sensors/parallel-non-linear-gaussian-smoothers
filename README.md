@@ -1,7 +1,6 @@
-# Parallel Filtering and Smoothing
+# Parallel Iterated Extended and Sigma-Point Kalman Smoothers
 
-Temporal Parallelization of non-linear Filtering and Smoothing <cite>[1-2]</cite> implemented using JAX methods.
-
+Companion code in JAX for the paper Parallel Iterated Extended and Sigma-Point Kalman Smoothers [2].
 
 What is it?
 -----------
