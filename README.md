@@ -6,7 +6,7 @@ Temporal Parallelization of non-linear Filtering and Smoothing <cite>[1-2]</cite
 What is it?
 -----------
 
-This is an implementation of parallelized Bayesian Filters and Smoothers with CPU/GPU/TPU support coded using using [JAX](https://github.com/google/jax) primitives, in particular associative scan.
+This is an implementation of parallelized Extended and Sigma-Points Bayesian Filters and Smoothers with CPU/GPU/TPU support coded using using [JAX](https://github.com/google/jax) primitives, in particular associative scan.
 
 Supported features
 ------------------
