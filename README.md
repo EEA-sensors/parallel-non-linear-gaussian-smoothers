@@ -18,7 +18,7 @@ Installation
 ------------
 - With GPU CUDA 11.0 support
   - Using pip
-    Run `pip install https://github.com/EEA-sensors/parallelEKF.git -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
+    Run `pip install https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
   - By cloning
     Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git
     Run `pip install -r requirements.txt -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
