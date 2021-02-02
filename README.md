@@ -19,12 +19,12 @@ Installation
 - With GPU CUDA 11.0 support
   - Using pip
     Run `pip install https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
-  - By cloning
+  - By cloning  
     Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git
     Run `pip install -r requirements.txt -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
     Run `python setup.py [install|develop]` depending on the level of installation you want
 - Without GPU support
-  - By cloning
+  - By cloning  
     Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git
     Run `python setup.py [install|develop] --no-deps` depending on the level of installation you want
     Manually install the dependencies `jax` and `jaxlib`, and for examples only `matplotlib`, `numba`, `tqdm`
