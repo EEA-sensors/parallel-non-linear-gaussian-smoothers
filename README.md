@@ -5,7 +5,7 @@ Companion code in JAX for the paper Parallel Iterated Extended and Sigma-Point K
 What is it?
 -----------
 
-This is an implementation of parallelized Extended and Sigma-Points Bayesian Filters and Smoothers with CPU/GPU/TPU support coded using using [JAX](https://github.com/google/jax) primitives, in particular [associative scan](https://en.wikipedia.org/wiki/Prefix_sum?wprov=sfla1).
+This is an implementation of parallelized Extended and Sigma-Points Bayesian Filters and Smoothers with CPU/GPU/TPU support coded using [JAX](https://github.com/google/jax) primitives, in particular [associative scan](https://en.wikipedia.org/wiki/Prefix_sum?wprov=sfla1).
 
 Supported features
 ------------------
