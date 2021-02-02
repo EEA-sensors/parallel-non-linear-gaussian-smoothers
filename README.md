@@ -20,12 +20,12 @@ Installation
   - Using pip
     Run `pip install https://github.com/EEA-sensors/parallelEKF.git -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
   - By cloning
-    Clone https://github.com/EEA-sensors/parallelEKF.git
+    Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git
     Run `pip install -r requirements.txt -f  https://storage.googleapis.com/jax-releases/jax_releases.html`
     Run `python setup.py [install|develop]` depending on the level of installation you want
 - Without GPU support
   - By cloning
-    Clone https://github.com/EEA-sensors/parallelEKF.git
+    Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git
     Run `python setup.py [install|develop] --no-deps` depending on the level of installation you want
     Manually install the dependencies `jax` and `jaxlib`, and for examples only `matplotlib`, `numba`, `tqdm`
 
@@ -59,7 +59,7 @@ iterated_smoothed_trajectories = ieks(initial_guess,
 
 ```
 
-For more examples, see the [notebooks](https://github.com/EEA-sensors/parallelEKF/tree/master/notebooks).
+For more examples, see the [notebooks](https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers/tree/master/notebooks).
 
 Acknowlegments
 --------------
