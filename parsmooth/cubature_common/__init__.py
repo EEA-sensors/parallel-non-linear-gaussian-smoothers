@@ -110,7 +110,7 @@ def get_mv_normal_parameters(sigma_points: SigmaPoints) -> MVNormalParameters:
     Parameters
     ----------
     sigma_points: SigmaPoints
-        shape of sigma_points.points is (n_dim, 2*n_dim)
+        shape of linearization.points is (n_dim, 2*n_dim)
     Returns
     -------
     out: MVNormalParameters

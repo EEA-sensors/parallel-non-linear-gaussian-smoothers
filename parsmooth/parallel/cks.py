@@ -6,7 +6,7 @@ from jax import lax, vmap
 
 from parsmooth.parallel.ckf import filter_routine
 from parsmooth.utils import MVNormalParameters
-from .operators import smoothing_operator
+from parsmooth.kalman.parallel.operators import smoothing_operator
 from ..cubature_common import get_sigma_points, SigmaPoints, get_mv_normal_parameters, covariance_sigma_points
 
 

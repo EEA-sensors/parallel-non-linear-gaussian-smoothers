@@ -159,7 +159,7 @@ def _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states):
         observations[i] = [y1, y2]
         observations[i] = [y1, y2]
         true_states[i] = np.concatenate((x, np.array([a])))
-    # return true_states, observations
+
 
 
 def get_data(x0, dt, r, T, s1, s2, q=10., random_state=None):

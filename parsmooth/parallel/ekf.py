@@ -5,7 +5,7 @@ import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
 
 from parsmooth.utils import MVNormalParameters
-from .operators import filtering_operator
+from parsmooth.kalman.parallel.operators import filtering_operator
 
 
 def make_associative_filtering_params(observation_function, Rk, transition_function, Qk_1, yk, i, m0, P0, x_k_1, x_k):

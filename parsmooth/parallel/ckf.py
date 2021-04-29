@@ -5,7 +5,7 @@ import jax.scipy.linalg as jlinalg
 from jax import lax, vmap
 
 from parsmooth.utils import MVNormalParameters, make_matrices_parameters
-from .operators import filtering_operator
+from parsmooth.kalman.parallel.operators import filtering_operator
 from ..cubature_common import get_sigma_points, get_mv_normal_parameters, covariance_sigma_points, SigmaPoints
 
 

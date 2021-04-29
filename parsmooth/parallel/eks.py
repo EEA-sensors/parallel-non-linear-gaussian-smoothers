@@ -6,7 +6,7 @@ from jax import lax, vmap, jacfwd
 
 from parsmooth.utils import MVNormalParameters
 from .ekf import filter_routine
-from .operators import smoothing_operator
+from parsmooth.kalman.parallel.operators import smoothing_operator
 
 
 def make_associative_smoothing_params(transition_function, Qk, i, n, mk, Pk, xk):
