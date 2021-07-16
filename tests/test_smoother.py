@@ -37,8 +37,12 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
 
     transition_fun = partial(linear_transition_function, a=F)
 
-    filtered_result = MVNormalParameters(np.random.randn(1, dim_x), np.random.randn(1, dim_x, dim_x))
+    filtered_mean = np.random.randn(2, dim_x)
+    filtered_chol_cov = np.random.rand(2, dim_x, dim_x)
+    filtered_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
+    filtered_cov = np.matmul(filtered_chol_cov, np.transpose(filtered_chol_cov, [0, 2, 1]))
 
+    filtered_result = MVNormalParameters(filtered_mean, filtered_cov)
 
     smoother_states_None_linearization = smoother_routine(transition_fun,
                                                           Q,
@@ -46,9 +50,12 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
                                                           extended_linearize,
                                                           None)
 
-    random_mean = np.random.randn(1, dim_x)
-    random_cov = np.random.randn(1, dim_x, dim_x)
+    random_mean = np.random.randn(2, dim_x)
+    random_chol_cov = np.random.rand(2, dim_x, dim_x)
+    random_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
+    random_cov = np.matmul(random_chol_cov, np.transpose(random_chol_cov, [0, 2, 1]))
     random_linearization = MVNormalParameters(random_mean, random_cov)
+
     smoother_states_random_linearization = smoother_routine(transition_fun,
                                                             Q,
                                                             filtered_result,
@@ -61,17 +68,15 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     np_test.assert_allclose(smoother_states_None_linearization.cov, smoother_states_random_linearization.cov,
                             atol=1e-5, rtol=1e-5)
 
-    m_k = filtered_result.mean
-    P_k = filtered_result.cov
+    m_k = filtered_result.mean[0]
+    P_k = filtered_result.cov[0]
     m_ = F @ m_k
     P_ = F @ P_k @ F.T + Q
     G = P_k @ F.T @ np.linalg.inv(P_)
     expected_mean = m_k + G @ (m_k - m_)
     expected_cov = P_k + G @ (P_k - P_) @ G.T
 
-    np_test.assert_allclose(filtered_states_None_linearization.mean[0], expected_mean,
+    np_test.assert_allclose(smoother_states_None_linearization.mean[0], expected_mean,
                             atol=1e-5, rtol=1e-5)
-    np_test.assert_allclose(filtered_states_None_linearization.cov[0], expected_cov,
+    np_test.assert_allclose(smoother_states_None_linearization.cov[0], expected_cov,
                             atol=1e-5, rtol=1e-5)
-
-

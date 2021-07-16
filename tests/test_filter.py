@@ -56,7 +56,9 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
                                                         None)
 
     random_mean = np.random.randn(1, dim_x)
-    random_cov = np.random.randn(1, dim_x, dim_x)
+    random_chol_cov = np.random.rand(1, dim_x, dim_x)
+    random_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
+    random_cov = np.matmul(random_chol_cov, np.transpose(random_chol_cov, [0, 2, 1]))
     random_linearization = MVNormalParameters(random_mean, random_cov)
     filtered_states_random_linearization = filter_routine(initial_state, y.reshape(1, -1),
                                                           transition_fun, Q,
@@ -81,25 +83,31 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
                             atol=1e-5, rtol=1e-5)
 
 
+@pytest.mark.skip
 def test_one_step_linear_cubature(dim_x, dim_y, seed):
     pass
 
 
+@pytest.mark.skip(reason="Needs implementing")
 def test_one_step_extended_cubature(dim_x, dim_y, seed):
     pass
 
 
+@pytest.mark.skip(reason="Needs implementing")
 def test_one_step_sine_cubature(dim_x, dim_y, seed):
     pass
 
 
+@pytest.mark.skip(reason="Needs implementing")
 def test_todo():
     pass
 
 
+@pytest.mark.skip(reason="Needs implementing")
 def test_end_to_end_extended():
     pass
 
 
+@pytest.mark.skip(reason="Needs implementing")
 def test_end_to_end_cubature():
     pass
