@@ -7,6 +7,7 @@ from jax.config import config
 
 from parsmooth.kalman.sequential.standard import smoother_routine
 from parsmooth.linearization.taylor import linearize as extended_linearize
+from parsmooth.linearization.sigma_points import linearize as sigma_points_linearize
 from parsmooth.utils import MVNormalParameters
 
 
@@ -26,7 +27,8 @@ def linear_observation_function(x, r, c):
 @pytest.mark.parametrize("dim_x", [1, 2, 3])
 @pytest.mark.parametrize("dim_y", [1, 2, 3])
 @pytest.mark.parametrize("seed", [0, 42, 666])
-def test_one_step_linear_extended(dim_x, dim_y, seed):
+@pytest.mark.parametrize("linearization_method", [extended_linearize])
+def test_one_step_linear(dim_x, dim_y, seed, linearization_method):
     np.random.seed(seed)
 
     F = np.random.randn(dim_x, dim_x)
@@ -47,7 +49,7 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     smoother_states_None_linearization = smoother_routine(transition_fun,
                                                           Q,
                                                           filtered_result,
-                                                          extended_linearize,
+                                                          linearization_method,
                                                           None)
 
     random_mean = np.random.randn(2, dim_x)
@@ -59,7 +61,7 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     smoother_states_random_linearization = smoother_routine(transition_fun,
                                                             Q,
                                                             filtered_result,
-                                                            extended_linearize,
+                                                            linearization_method,
                                                             random_linearization)
 
     np_test.assert_allclose(smoother_states_None_linearization.mean, smoother_states_random_linearization.mean,
@@ -68,15 +70,17 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     np_test.assert_allclose(smoother_states_None_linearization.cov, smoother_states_random_linearization.cov,
                             atol=1e-5, rtol=1e-5)
 
+    prev_smoothed_mean = filtered_result.mean[1]
+    prev_smoothed_cov = filtered_result.cov[1]
     m_k = filtered_result.mean[0]
     P_k = filtered_result.cov[0]
     m_ = F @ m_k
     P_ = F @ P_k @ F.T + Q
     G = P_k @ F.T @ np.linalg.inv(P_)
-    expected_mean = m_k + G @ (m_k - m_)
-    expected_cov = P_k + G @ (P_k - P_) @ G.T
+    expected_mean = m_k + G @ (prev_smoothed_mean - m_)
+    expected_cov = P_k + G @ (prev_smoothed_cov - P_) @ G.T
 
-    np_test.assert_allclose(smoother_states_None_linearization.mean[0], expected_mean,
-                            atol=1e-5, rtol=1e-5)
     np_test.assert_allclose(smoother_states_None_linearization.cov[0], expected_cov,
+                            atol=1e-5, rtol=1e-5)
+    np_test.assert_allclose(smoother_states_None_linearization.mean[0], expected_mean,
                             atol=1e-5, rtol=1e-5)

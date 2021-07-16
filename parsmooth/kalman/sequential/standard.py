@@ -25,7 +25,7 @@ def predict(transition_function: Callable or Tuple[Callable, 2],
             prior: MVNormalParameters,
             linearization_state: MVNormalParameters or None,
             linearization_method: Callable) -> MVNormalParameters:
-    """ Computes the extended kalman filter linearization of :math:`x_{t+1} = f(x_t, \mathcal{N}(0, \Sigma))`
+    r""" Computes the extended kalman filter linearization of :math:`x_{t+1} = f(x_t, \mathcal{N}(0, \Sigma))`
 
     Parameters
     ----------
@@ -59,7 +59,7 @@ def update(observation_function: Callable or Tuple[Callable, 2],
            observation: jnp.ndarray,
            linearization_state: MVNormalParameters or None,
            linearization_method: Callable) -> Tuple[float, MVNormalParameters]:
-    """ Computes the extended kalman filter linearization of :math:`x_t \mid y_t`
+    r""" Computes the extended kalman filter linearization of :math:`x_t \mid y_t`
 
     Parameters
     ----------
@@ -109,7 +109,7 @@ def filter_routine(initial_state: MVNormalParameters,
                    observation_covariances: jnp.ndarray,
                    linearization_method: Callable,
                    linearization_points: MVNormalParameters = None) -> MVNormalParameters:
-    """ Computes the linearized predict-update routine of the Kalman Filter equations and returns a series of filtered_states
+    r""" Computes the linearized predict-update routine of the Kalman Filter equations and returns a series of filtered_states
 
     Parameters
     ----------
@@ -128,7 +128,7 @@ def filter_routine(initial_state: MVNormalParameters,
     linearization_method: callable
         The linearization method
     linearization_points: (n, D) MVNormalParameters, optional
-        points at which to compute the jacobians.
+        points at which to compute the Jacobians.
 
     Returns
     -------
@@ -173,8 +173,7 @@ def smooth(transition_function: Callable or Tuple[Callable, 2],
            previous_smoothed: MVNormalParameters,
            linearization_method: Callable,
            linearization_state: MVNormalParameters or None) -> MVNormalParameters:
-    """
-        One step extended kalman smoother
+    r"""One step extended kalman smoother
 
         Parameters
         ----------
