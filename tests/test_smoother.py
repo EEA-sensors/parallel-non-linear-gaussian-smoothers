@@ -7,7 +7,6 @@ from jax.config import config
 
 from parsmooth.kalman.sequential.standard import smoother_routine
 from parsmooth.linearization.taylor import linearize as extended_linearize
-from parsmooth.linearization.sigma_points import linearize as sigma_points_linearize
 from parsmooth.utils import MVNormalParameters
 
 

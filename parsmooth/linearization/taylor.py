@@ -14,7 +14,7 @@ def _sqrt_linearize(f, linearization_point, noise_cov):
 
 
 def _standard_linearize(f, linearization_state, noise_cov):
-    if isinstance(f, tuple):
+    if hasattr(f, "__len__"):
         mean_f, cov_f = f
         Fx = jacfwd(mean_f, 0)(linearization_state.mean)
         bias = mean_f(linearization_state.mean) - Fx @ linearization_state.mean

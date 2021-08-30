@@ -1,9 +1,15 @@
+import functools
+from functools import partial
 from typing import Callable, Tuple
 
+import jax
 import jax.numpy as jnp
 import jax.scipy.linalg as jlag
-from jax import lax
+from decorator import decorate
+from jax import lax, closure_convert, custom_vjp, vjp
+from jax.flatten_util import ravel_pytree
 from jax.lax import cond
+from scipy.optimize import fixed_point
 
 from parsmooth.utils import MVNormalParameters, make_matrices_parameters
 
@@ -265,6 +271,135 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     return MVNormalParameters(smoothed_states[0], smoothed_states[1])
 
 
+def _specialize_fun(fun, params):
+    if callable(fun):
+        @functools.wraps
+        def _specialized_fun(*x):
+            return fun(*x, *params)
+
+        return _specialized_fun
+    return _specialize_fun(fun[0], params[0]), _specialize_fun(fun[1], params[1])
+
+
+def _convert_closure(fun):
+    if callable(fun):
+        return closure_convert(fun)
+    return tuple(closure_convert(f) for f in fun)
+
+
+def _explicit_filter_smoother(initial_state: MVNormalParameters,
+                              observations: jnp.ndarray,
+                              transition_function: Callable or Tuple[Callable, 2],
+                              transition_function_parameters,
+                              transition_covariances: jnp.ndarray,
+                              observation_function: Callable or Tuple[Callable, 2],
+                              observation_function_parameters,
+                              observation_covariances: jnp.ndarray,
+                              linearization_method: Callable,
+                              linearization_states: MVNormalParameters):
+    transition_function = _specialize_fun(transition_function, transition_function_parameters)
+    observation_function = _specialize_fun(observation_function, observation_function_parameters)
+
+    filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
+                                     observation_function, observation_covariances, linearization_method,
+                                     linearization_states)
+    return smoother_routine(transition_function, transition_covariances, filtered_states, linearization_method,
+                            linearization_states)
+
+
+@partial(custom_vjp, nondiff_argnums=(1, 2, 4, 6, 8))
+def _iterated_smoother(initial_state: MVNormalParameters,
+                       observations: jnp.ndarray,
+                       transition_function: Callable or Tuple[Callable, 2],
+                       transition_function_parameters,
+                       transition_covariances: jnp.ndarray,
+                       observation_function: Callable or Tuple[Callable, 2],
+                       observation_function_parameters,
+                       observation_covariances: jnp.ndarray,
+                       linearization_method: Callable,
+                       initial_linearization_states: MVNormalParameters,
+                       n_iter):
+    def body(linearization_states, _):
+        smoothed_states = _explicit_filter_smoother(initial_state, observations, transition_function,
+                                                    transition_function_parameters, transition_covariances,
+                                                    observation_function, observation_function_parameters,
+                                                    observation_covariances, linearization_method,
+                                                    linearization_states)
+        return smoothed_states, None
+
+    if initial_linearization_states is None:
+        initial_linearization_states = body(None, None)
+
+    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
+    return MVNormalParameters(iterated_smoothed_trajectories[0], iterated_smoothed_trajectories[1])
+
+
+def _iterated_smoother_fwd(initial_state: MVNormalParameters,
+                           observations: jnp.ndarray,
+                           transition_function: Callable or Tuple[Callable, 2],
+                           transition_function_params,
+                           transition_covariances: jnp.ndarray,
+                           observation_function: Callable or Tuple[Callable, 2],
+                           observation_function_params,
+                           observation_covariances: jnp.ndarray,
+                           linearization_method: Callable,
+                           initial_linearization_states: MVNormalParameters,
+                           n_iter):
+    iterated_smoothed_trajectories, _ = _iterated_smoother(initial_state,
+                                                           observations,
+                                                           transition_function,
+                                                           transition_function_params,
+                                                           transition_covariances,
+                                                           observation_function,
+                                                           observation_function_params,
+                                                           observation_covariances,
+                                                           linearization_method,
+                                                           initial_linearization_states,
+                                                           n_iter)
+    aux = (initial_state, transition_function_params, transition_covariances, observation_function_params,
+           observation_covariances, initial_linearization_states), iterated_smoothed_trajectories
+    return iterated_smoothed_trajectories, aux
+
+
+def _iterated_smoother_bwd(observations, transition_function, observation_function, linearization_method, n_iter, aux,
+                           iterated_smoothed_trajectories_dot):
+    (initial_state, transition_function_params, transition_covariances, observation_function_params,
+     observation_covariances, initial_linearization_states), iterated_smoothed_trajectories = aux
+
+    def fun_iter_aux(init, trans_params, trans_covs, obs_params, obs_covs, init_lin_states):
+        return _explicit_filter_smoother(init, observations, transition_function, trans_params, trans_covs,
+                                         observation_function, obs_params, obs_covs, linearization_method,
+                                         init_lin_states)
+
+    _, aux_vjp = vjp(fun_iter_aux, *aux)
+
+    def fun_iter_trajectory(optimal_trajectory):
+        return _explicit_filter_smoother(initial_state, observations, transition_function,
+                                         transition_function_params, transition_covariances,
+                                         observation_function, observation_function_params,
+                                         observation_covariances, linearization_method,
+                                         optimal_trajectory)
+
+    _, traj_vjp = vjp(fun_iter_trajectory, iterated_smoothed_trajectories)
+    ravelled_tangent_traj, unravel_fn = ravel_pytree(iterated_smoothed_trajectories_dot)
+
+    def _body(tangent_traj, _):
+        ravelled_vjp_val, _ = ravel_pytree(traj_vjp(tangent_traj))
+
+        return unravel_fn(ravelled_vjp_val + ravelled_tangent_traj), None
+
+    aux_dot, _ = lax.scan(_body, (iterated_smoothed_trajectories_dot,), jnp.arange(n_iter))
+
+    a_bar = aux_vjp(aux_dot)
+    return a_bar[:-1] + (jnp.zeros_like(a_bar[-1]),)
+
+
+def rev_iter(f, packed, u):
+    a, x_star, x_star_bar = packed
+    _, vjp_x = vjp(lambda x: f(a, x), x_star)
+    return x_star_bar + vjp_x(u)[0]
+
+
 def iterated_smoother_routine(initial_state: MVNormalParameters,
                               observations: jnp.ndarray,
                               transition_function: Callable or Tuple[Callable, 2],
@@ -305,6 +440,10 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         The result of the smoothing routine
 
     """
+    # If the functions have been specialised somehow we need to get back the parameters from the closure.
+    transition_function, transition_function_params = zip(*_convert_closure(transition_function))
+    observation_function, observation_function_params = zip(*_convert_closure(observation_function))
+
     n_observations = observations.shape[0]
 
     transition_covariances, observation_covariances = list(map(
@@ -312,18 +451,17 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         [transition_covariances,
          observation_covariances]))
 
-    def body(linearization_states, _):
-        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
-                                         observation_function, observation_covariances, linearization_method,
-                                         linearization_states)
-        return smoother_routine(transition_function, transition_covariances, filtered_states, linearization_method,
-                                linearization_states), None
-
-    if initial_linearization_states is None:
-        initial_linearization_states = body(None, None)
-
-    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
-    return MVNormalParameters(iterated_smoothed_trajectories[0], iterated_smoothed_trajectories[1])
+    return _iterated_smoother(initial_state,
+                              observations,
+                              transition_function,
+                              transition_function_params,
+                              transition_covariances,
+                              observation_function,
+                              observation_function_params,
+                              observation_covariances,
+                              linearization_method,
+                              initial_linearization_states,
+                              n_iter)
 
 # Previously
 
