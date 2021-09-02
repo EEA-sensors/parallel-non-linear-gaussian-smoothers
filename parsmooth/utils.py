@@ -1,4 +1,5 @@
 from collections import namedtuple
+from typing import NamedTuple
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jlnialg
@@ -6,7 +7,11 @@ import numpy as np
 
 __all__ = ["MVNormalParameters", "make_matrices_parameters"]
 
-MVNormalParameters = namedtuple("MVNormalParameters", ["mean", "cov"])
+
+class MVNormalParameters(NamedTuple):
+    mean: jnp.ndarray
+    cov: jnp.ndarray or None = None
+    chol: jnp.ndarray or None = None
 
 
 def make_matrices_parameters(matrix: jnp.ndarray or np.array, n_observations: int) -> jnp.array:

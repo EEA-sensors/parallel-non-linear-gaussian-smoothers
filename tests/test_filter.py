@@ -84,6 +84,42 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
 
 
 @pytest.mark.skip
+def test_sqrt_agrees_with_standard(dim_x, dim_y, seed, T):
+    np.random.seed(seed)
+    y = np.random.randn(T, dim_y)
+
+    F = np.random.randn(dim_x, dim_x)
+    H = np.random.randn(dim_y, dim_x)
+
+    chol_Q = np.random.rand(dim_x, dim_x)
+    chol_Q[np.triu_indices(dim_x, k=1)] = 0.
+    Q = chol_Q @ chol_Q.T
+
+    chol_R = np.random.rand(dim_y, dim_y)
+    chol_R[np.triu_indices(dim_y, k=1)] = 0.
+    R = chol_R @ chol_R.T
+
+    transition_fun = partial(linear_transition_function, a=F)
+    observation_fun = partial(linear_observation_function, c=H)
+
+    m0 = np.random.randn(dim_x)
+    P0_chol = np.random.rand(dim_x, dim_x)
+    P0_chol[np.triu_indices(dim_x, k=1)] = 0.
+    P0 = P0_chol @ P0_chol.T
+    initial_state = MVNormalParameters(m0, P0)
+    filtered_states = filter_routine(initial_state, y.reshape(1, -1),
+                                     transition_fun, Q,
+                                     observation_fun, R, extended_linearize,
+                                     None)
+
+    filtered_states_sqrt = sqrt_filter_routine(initial_state, y.reshape(1, -1),
+                                               transition_fun, Q,
+                                               observation_fun, R, extended_linearize,
+                                               None)
+
+    np.testing.assert_allclose(filtered_states.mean, filtered_states_sqrt.mean)
+
+@pytest.mark.skip
 def test_one_step_linear_cubature(dim_x, dim_y, seed):
     pass
 
