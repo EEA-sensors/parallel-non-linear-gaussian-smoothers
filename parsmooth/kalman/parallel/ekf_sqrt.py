@@ -4,7 +4,7 @@ import jax.numpy as jnp, scipy
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
 
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 from .operators_sqrt import filtering_operator
 
 
@@ -113,7 +113,7 @@ def _make_associative_filtering_params_generic(F, c, W, H, d, V, y):
     return A, b, U, eta, Z
 
 
-def filter_routine(initial_state: MVNormalParameters,
+def filter_routine(initial_state: MVNParams,
                    observations: jnp.ndarray,
                    transition_function: Callable,
                    transition_covariance: jnp.ndarray,
@@ -125,7 +125,7 @@ def filter_routine(initial_state: MVNormalParameters,
 
     Parameters
     ----------
-    initial_state: MVNormalParameters
+    initial_state: MVNParams
         prior belief on the initial state distribution
     observations: (n, K) array
         array of n observations of dimension K
@@ -142,7 +142,7 @@ def filter_routine(initial_state: MVNormalParameters,
 
     Returns
     -------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         list of filtered states
 
     """
@@ -165,4 +165,4 @@ def filter_routine(initial_state: MVNormalParameters,
 
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Us, etas, Zs))
 
-    return vmap(MVNormalParameters)(filtered_means, filtered_covariances), linear_param
+    return vmap(MVNParams)(filtered_means, filtered_covariances), linear_param

@@ -5,7 +5,7 @@ import jax.scipy.linalg as jlag
 from jax import lax
 from jax.lax import cond
 
-from parsmooth.utils import MVNormalParameters, make_matrices_parameters
+from parsmooth.utils import MVNParams, make_matrices_parameters
 
 __all__ = ["filter_routine", "smoother_routine"]
 
@@ -15,16 +15,16 @@ def _linearize(linearization_state, prev_state, cov, fun, method):
         linearization_state = prev_state
     else:
         if linearization_state.cov is None:
-            linearization_state = MVNormalParameters(linearization_state.mean, prev_state.cov)
+            linearization_state = MVNParams(linearization_state.mean, prev_state.cov)
     F, c, Q = method(fun, linearization_state, cov, sqrt=False)
     return F, c, Q + F @ (prev_state.cov - linearization_state.cov) @ F.T
 
 
 def predict(transition_function: Callable or Tuple[Callable, 2],
             transition_covariance: jnp.ndarray or None,
-            prior: MVNormalParameters,
-            linearization_state: MVNormalParameters or None,
-            linearization_method: Callable) -> MVNormalParameters:
+            prior: MVNParams,
+            linearization_state: MVNParams or None,
+            linearization_method: Callable) -> MVNParams:
     r""" Computes the extended kalman filter linearization of :math:`x_{t+1} = f(x_t, \mathcal{N}(0, \Sigma))`
 
     Parameters
@@ -33,15 +33,15 @@ def predict(transition_function: Callable or Tuple[Callable, 2],
         transition function of the state space model
     transition_covariance: (D,D) array
         covariance :math:`\Sigma` of the noise fed to transition_function
-    prior: MVNormalParameters
+    prior: MVNParams
         prior state of the filter x
-    linearization_state: MVNormalParameters
+    linearization_state: MVNParams
         Where to compute the Jacobian
     linearization_method: callable
         The linearization method
     Returns
     -------
-    out: MVNormalParameters
+    out: MVNParams
         Predicted state
     """
 
@@ -50,15 +50,15 @@ def predict(transition_function: Callable or Tuple[Callable, 2],
 
     mean = c + jnp.dot(F, prior.mean)
 
-    return MVNormalParameters(mean, Q)
+    return MVNParams(mean, Q)
 
 
 def update(observation_function: Callable or Tuple[Callable, 2],
            observation_covariance: jnp.ndarray or None,
-           predicted: MVNormalParameters,
+           predicted: MVNParams,
            observation: jnp.ndarray,
-           linearization_state: MVNormalParameters or None,
-           linearization_method: Callable) -> Tuple[float, MVNormalParameters]:
+           linearization_state: MVNParams or None,
+           linearization_method: Callable) -> Tuple[float, MVNParams]:
     r""" Computes the extended kalman filter linearization of :math:`x_t \mid y_t`
 
     Parameters
@@ -67,11 +67,11 @@ def update(observation_function: Callable or Tuple[Callable, 2],
         observation function of the state space model
     observation_covariance: (K,K) array
         observation_error :math:`\Sigma` fed to observation_function
-    predicted: MVNormalParameters
+    predicted: MVNParams
         predicted state of the filter :math:`x`
     observation: (K) array
         Observation :math:`y`
-    linearization_state: MVNormalParameters
+    linearization_state: MVNParams
         Where to compute the Jacobian
     linearization_method: callable
         The linearization method
@@ -80,7 +80,7 @@ def update(observation_function: Callable or Tuple[Callable, 2],
     -------
     loglikelihood: float
         Log-likelihood increment for observation
-    updated_state: MVNormalParameters
+    updated_state: MVNParams
         filtered state
     """
 
@@ -93,23 +93,23 @@ def update(observation_function: Callable or Tuple[Callable, 2],
 
     mean = predicted.mean + jnp.dot(gain, residual)
     cov = predicted.cov - jnp.dot(gain, jnp.dot(R, gain.T))
-    updated_state = MVNormalParameters(mean, cov)
+    updated_state = MVNParams(mean, cov)
     return updated_state
 
 
-def filter_routine(initial_state: MVNormalParameters,
+def filter_routine(initial_state: MVNParams,
                    observations: jnp.ndarray,
                    transition_function: Callable or Tuple[Callable, 2],
                    transition_covariances: jnp.ndarray,
                    observation_function: Callable or Tuple[Callable, 2],
                    observation_covariances: jnp.ndarray,
                    linearization_method: Callable,
-                   linearization_points: MVNormalParameters = None) -> MVNormalParameters:
+                   linearization_points: MVNParams = None) -> MVNParams:
     r""" Computes the linearized predict-update routine of the Kalman Filter equations and returns a series of filtered_states
 
     Parameters
     ----------
-    initial_state: MVNormalParameters
+    initial_state: MVNParams
         prior belief on the initial state distribution
     observations: (n, K) ndarray
         array of n observations of dimension K
@@ -128,7 +128,7 @@ def filter_routine(initial_state: MVNormalParameters,
 
     Returns
     -------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         list of filtered states
     """
     n_observations = observations.shape[0]
@@ -148,7 +148,7 @@ def filter_routine(initial_state: MVNormalParameters,
         return (updated_state, linearization_point), updated_state
 
     if linearization_points is not None:
-        initial_linearization_point = MVNormalParameters(linearization_points.mean[0], linearization_points.cov[0])
+        initial_linearization_point = MVNParams(linearization_points.mean[0], linearization_points.cov[0])
     else:
         initial_linearization_point = None
 
@@ -160,15 +160,15 @@ def filter_routine(initial_state: MVNormalParameters,
                                    linearization_points),
                                   length=n_observations)
 
-    return MVNormalParameters(filtered_states[0], filtered_states[1])
+    return MVNParams(filtered_states[0], filtered_states[1])
 
 
 def smooth(transition_function: Callable or Tuple[Callable, 2],
            transition_covariances: jnp.ndarray,
-           filtered_state: MVNormalParameters,
-           previous_smoothed: MVNormalParameters,
+           filtered_state: MVNParams,
+           previous_smoothed: MVNParams,
            linearization_method: Callable,
-           linearization_state: MVNormalParameters or None) -> MVNormalParameters:
+           linearization_state: MVNParams or None) -> MVNParams:
     r"""One step extended kalman smoother
 
         Parameters
@@ -177,18 +177,18 @@ def smooth(transition_function: Callable or Tuple[Callable, 2],
              transition function of the state space model
         transition_covariances: (D,D) array
             covariance :math:`\Sigma` of the noise fed to transition_function
-        filtered_state: MVNormalParameters
+        filtered_state: MVNParams
             mean and cov computed by Kalman Filtering
         previous_smoothed: MVNormalParameters,
             smoothed state of the previous step
         linearization_method: Callable
             The linearization method
-        linearization_state: MVNormalParameters
+        linearization_state: MVNParams
             Where to compute the Jacobian
 
         Returns
         -------
-        smoothed_state: MVNormalParameters
+        smoothed_state: MVNParams
             smoothed state
         """
     F, c, Q = _linearize(linearization_state, filtered_state, transition_covariances, transition_function,
@@ -201,19 +201,19 @@ def smooth(transition_function: Callable or Tuple[Callable, 2],
     mean = filtered_state.mean + jnp.dot(gain, mean_diff)
     cov = filtered_state.cov + jnp.dot(gain, jnp.dot(cov_diff, gain.T))
 
-    return MVNormalParameters(mean, cov)
+    return MVNParams(mean, cov)
 
 
 def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
                      transition_covariances: jnp.ndarray,
-                     filtered_states: MVNormalParameters,
+                     filtered_states: MVNParams,
                      linearization_method: Callable,
-                     linearization_points: MVNormalParameters = None) -> MVNormalParameters:
+                     linearization_points: MVNParams = None) -> MVNParams:
     """ Computes the extended Rauch-Tung-Striebel (a.k.a extended Kalman) smoother routine and returns a series of smoothed_states
 
     Parameters
     ----------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         Filtered states obtained from Kalman Filter
     transition_function: callable :math:`f(x_t,\epsilon_t)\mapsto x_{t-1}`
         transition function of the state space model
@@ -226,7 +226,7 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
 
     Returns
     -------
-    smoothed_states: MVNormalParameters
+    smoothed_states: MVNParams
         list of smoothed states
     """
     n_observations = filtered_states.mean.shape[0]
@@ -249,30 +249,30 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
 
         return cond(j > 0, otherwise, first_step, operand=(state_, list_inputs, j))
 
-    last_state = MVNormalParameters(filtered_states.mean[-1], filtered_states.cov[-1])
+    last_state = MVNParams(filtered_states.mean[-1], filtered_states.cov[-1])
     _, smoothed_states = lax.scan(body,
                                   (0, last_state),
                                   [filtered_states, transition_covariances, linearization_points],
                                   reverse=True)
 
-    return MVNormalParameters(smoothed_states[0], smoothed_states[1])
+    return MVNParams(smoothed_states[0], smoothed_states[1])
 
 
-def iterated_smoother_routine(initial_state: MVNormalParameters,
+def iterated_smoother_routine(initial_state: MVNParams,
                               observations: jnp.ndarray,
                               transition_function: Callable or Tuple[Callable, 2],
                               transition_covariances: jnp.ndarray,
                               observation_function: Callable or Tuple[Callable, 2],
                               observation_covariances: jnp.ndarray,
                               linearization_method: Callable,
-                              initial_linearization_states: MVNormalParameters = None,
+                              initial_linearization_states: MVNParams = None,
                               n_iter: int = 100):
     """
     Computes the Gauss-Newton iterated extended Kalman smoother
 
     Parameters
     ----------
-    initial_state: MVNormalParameters
+    initial_state: MVNParams
         prior belief on the initial state distribution
     observations: (n, K) array
         array of n observations of dimension K
@@ -294,7 +294,7 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
 
     Returns
     -------
-    iterated_smoothed_trajectories: MVNormalParameters
+    iterated_smoothed_trajectories: MVNParams
         The result of the smoothing routine
 
     """
@@ -316,4 +316,4 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         initial_linearization_states = body(None, None)
 
     iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
-    return MVNormalParameters(iterated_smoothed_trajectories[0], iterated_smoothed_trajectories[1])
+    return MVNParams(iterated_smoothed_trajectories[0], iterated_smoothed_trajectories[1])

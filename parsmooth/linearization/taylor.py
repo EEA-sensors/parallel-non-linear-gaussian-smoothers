@@ -10,7 +10,6 @@ def linearize(f, linearization_state, noise_cov, sqrt=False):
 
 
 def _sqrt_linearize(f, linearization_point, noise_cov):
-
     pass
 
 

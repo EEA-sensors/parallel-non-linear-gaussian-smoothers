@@ -8,7 +8,7 @@ from jax.config import config
 from parsmooth.kalman.sequential.standard import smoother_routine
 from parsmooth.linearization.taylor import linearize as extended_linearize
 from parsmooth.linearization.sigma_points import linearize as sigma_points_linearize
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +44,7 @@ def test_one_step_linear(dim_x, dim_y, seed, linearization_method):
     filtered_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
     filtered_cov = np.matmul(filtered_chol_cov, np.transpose(filtered_chol_cov, [0, 2, 1]))
 
-    filtered_result = MVNormalParameters(filtered_mean, filtered_cov)
+    filtered_result = MVNParams(filtered_mean, filtered_cov)
 
     smoother_states_None_linearization = smoother_routine(transition_fun,
                                                           Q,
@@ -56,7 +56,7 @@ def test_one_step_linear(dim_x, dim_y, seed, linearization_method):
     random_chol_cov = np.random.rand(2, dim_x, dim_x)
     random_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
     random_cov = np.matmul(random_chol_cov, np.transpose(random_chol_cov, [0, 2, 1]))
-    random_linearization = MVNormalParameters(random_mean, random_cov)
+    random_linearization = MVNParams(random_mean, random_cov)
 
     smoother_states_random_linearization = smoother_routine(transition_fun,
                                                             Q,

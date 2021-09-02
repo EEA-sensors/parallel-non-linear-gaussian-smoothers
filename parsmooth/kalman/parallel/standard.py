@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap
 
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 
 class LinearizationMethod(Enum):
     EXTENDED = "EXTENDED"
@@ -128,7 +128,7 @@ def _make_associative_filtering_params_generic(observation_function, obs_cov, tr
     return A, b, C, eta, J
 
 
-def filter_routine(initial_state: MVNormalParameters,
+def filter_routine(initial_state: MVNParams,
                    observations: jnp.ndarray,
                    transition_function: Callable or Tuple[Callable],
                    transition_covariance: jnp.ndarray,
@@ -142,7 +142,7 @@ def filter_routine(initial_state: MVNormalParameters,
 
     Parameters
     ----------
-    initial_state: MVNormalParameters
+    initial_state: MVNParams
         prior belief on the initial state distribution
     observations: (n, K) array
         array of n observations of dimension K
@@ -161,7 +161,7 @@ def filter_routine(initial_state: MVNormalParameters,
 
     Returns
     -------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         list of filtered states
 
     """
@@ -178,4 +178,4 @@ def filter_routine(initial_state: MVNormalParameters,
     As, bs, Cs, etas, Js = make_params(observations, jnp.arange(n_observations), x_k_1_s, linearization_points)
     _, filtered_means, filtered_covariances, _, _ = lax.associative_scan(filtering_operator, (As, bs, Cs, etas, Js))
 
-    return vmap(MVNormalParameters)(filtered_means, filtered_covariances)
+    return vmap(MVNParams)(filtered_means, filtered_covariances)

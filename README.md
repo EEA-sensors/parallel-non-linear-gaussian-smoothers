@@ -34,27 +34,30 @@ Example
 
 ```python
 from parsmooth.parallel import ieks
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 
-initial_guess = MVNormalParameters(...)
+initial_guess = MVNParams(...)
 data = ...
 Q = ...  # transition noise covariance matrix
 R = ...  # observation error covariance matrix
 
+
 def transition_function(x):
   ...
   return next_x
-  
+
+
 def observation_function(x):
   ...
   return obs
-  
-iterated_smoothed_trajectories = ieks(initial_guess, 
-                                      data, 
-                                      transition_function, 
-                                      Q, 
-                                      observation_function, 
-                                      R, 
+
+
+iterated_smoothed_trajectories = ieks(initial_guess,
+                                      data,
+                                      transition_function,
+                                      Q,
+                                      observation_function,
+                                      R,
                                       n_iter=100)  # runs the parallel IEKS 100 times.
 
 ```

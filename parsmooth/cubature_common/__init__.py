@@ -4,7 +4,7 @@ from typing import Tuple
 import jax.numpy as jnp
 import numpy as np
 
-from ..utils import MVNormalParameters
+from ..utils import MVNParams
 
 SigmaPoints = namedtuple(
     'SigmaPoints', ['points', 'wm', 'wc']
@@ -78,13 +78,13 @@ def cubature_weights(n_dim: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return wm, wc, xi
 
 
-def get_sigma_points(mv_normal_parameters: MVNormalParameters) -> SigmaPoints:
+def get_sigma_points(mv_normal_parameters: MVNParams) -> SigmaPoints:
     """ Computes the sigma-points for a given mv normal distribution
     The number of sigma-points is 2*n_dim
 
     Parameters
     ----------
-    mv_normal_parameters: MVNormalParameters
+    mv_normal_parameters: MVNParams
         Mean and Covariance of the distribution
 
     Returns
@@ -104,7 +104,7 @@ def get_sigma_points(mv_normal_parameters: MVNormalParameters) -> SigmaPoints:
     return SigmaPoints(sigma_points, wm, wc)
 
 
-def get_mv_normal_parameters(sigma_points: SigmaPoints) -> MVNormalParameters:
+def get_mv_normal_parameters(sigma_points: SigmaPoints) -> MVNParams:
     """ Computes the MV Normal distribution parameters associated with the sigma points
 
     Parameters
@@ -113,9 +113,9 @@ def get_mv_normal_parameters(sigma_points: SigmaPoints) -> MVNormalParameters:
         shape of linearization.points is (n_dim, 2*n_dim)
     Returns
     -------
-    out: MVNormalParameters
+    out: MVNParams
         Mean and covariance of RV of dimension K computed from sigma-points
     """
     m = mean_sigma_points(sigma_points)
     cov = covariance_sigma_points(sigma_points, m, sigma_points, m)
-    return MVNormalParameters(m, cov=cov)
+    return MVNParams(m, cov=cov)

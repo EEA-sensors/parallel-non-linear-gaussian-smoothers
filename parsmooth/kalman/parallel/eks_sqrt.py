@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlinalg
 from jax import lax, vmap, jacfwd
 
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 from .ekf_sqrt import filter_routine
 from .operators_sqrt import smoothing_operator
 
@@ -46,21 +46,21 @@ def _make_associative_smoothing_params_generic(F, c, W, m, N):
     return g, E, D
 
 
-def smoother_routine(filtered_states: MVNormalParameters,
+def smoother_routine(filtered_states: MVNParams,
                      linear_param: tuple):
     """ Computes the predict-update routine of the Extended Kalman Filter equations
     using temporal parallelization and returns a series of filtered_states TODO:reference
 
     Parameters
     ----------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         states resulting from (iterated) EKF
     linearisation_points: (n, D) array, optional
         points at which to compute the jacobians, typically previous run.
 
     Returns
     -------
-    filtered_states: MVNormalParameters
+    filtered_states: MVNParams
         list of filtered states
 
     """
@@ -76,23 +76,23 @@ def smoother_routine(filtered_states: MVNormalParameters,
 
     smoothed_means, _, smoothed_covariances = lax.associative_scan(smoothing_operator, (gs, Es, Ds), reverse=True)
 
-    return vmap(MVNormalParameters)(smoothed_means, smoothed_covariances)
+    return vmap(MVNParams)(smoothed_means, smoothed_covariances)
 
 
-def iterated_smoother_routine(initial_state: MVNormalParameters,
+def iterated_smoother_routine(initial_state: MVNParams,
                               observations: jnp.ndarray,
                               transition_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                               transition_covariance: jnp.ndarray,
                               observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                               observation_covariance: jnp.ndarray,
-                              initial_linearization_states: MVNormalParameters = None,
+                              initial_linearization_states: MVNParams = None,
                               n_iter: int = 100):
     """
     Computes the Gauss-Newton iterated extended Kalman smoother
 
     Parameters
     ----------
-    initial_state: MVNormalParameters
+    initial_state: MVNParams
         prior belief on the initial state distribution
     observations: (n, K) array
         array of n observations of dimension K
@@ -111,7 +111,7 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
 
     Returns
     -------
-    iterated_smoothed_trajectories: MVNormalParameters
+    iterated_smoothed_trajectories: MVNParams
         The result of the smoothing routine
 
     """

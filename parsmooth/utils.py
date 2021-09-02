@@ -5,10 +5,10 @@ import jax.numpy as jnp
 import jax.scipy.linalg as jlnialg
 import numpy as np
 
-__all__ = ["MVNormalParameters", "make_matrices_parameters"]
+__all__ = ["MVNParams", "make_matrices_parameters"]
 
 
-class MVNormalParameters(NamedTuple):
+class MVNParams(NamedTuple):
     mean: jnp.ndarray
     cov: jnp.ndarray or None = None
     chol: jnp.ndarray or None = None

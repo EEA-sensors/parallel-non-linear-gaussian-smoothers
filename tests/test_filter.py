@@ -7,7 +7,7 @@ from jax.config import config
 
 from parsmooth.kalman.sequential.standard import filter_routine
 from parsmooth.linearization.taylor import linearize as extended_linearize
-from parsmooth.utils import MVNormalParameters
+from parsmooth.utils import MVNParams
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +49,7 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     P0_chol = np.random.rand(dim_x, dim_x)
     P0_chol[np.triu_indices(dim_x, k=1)] = 0.
     P0 = P0_chol @ P0_chol.T
-    initial_state = MVNormalParameters(m0, P0)
+    initial_state = MVNParams(m0, P0)
     filtered_states_None_linearization = filter_routine(initial_state, y.reshape(1, -1),
                                                         transition_fun, Q,
                                                         observation_fun, R, extended_linearize,
@@ -59,7 +59,7 @@ def test_one_step_linear_extended(dim_x, dim_y, seed):
     random_chol_cov = np.random.rand(1, dim_x, dim_x)
     random_chol_cov[:, np.triu_indices(dim_x, k=1)] = 0.
     random_cov = np.matmul(random_chol_cov, np.transpose(random_chol_cov, [0, 2, 1]))
-    random_linearization = MVNormalParameters(random_mean, random_cov)
+    random_linearization = MVNParams(random_mean, random_cov)
     filtered_states_random_linearization = filter_routine(initial_state, y.reshape(1, -1),
                                                           transition_fun, Q,
                                                           observation_fun, R,
@@ -106,7 +106,7 @@ def test_sqrt_agrees_with_standard(dim_x, dim_y, seed, T):
     P0_chol = np.random.rand(dim_x, dim_x)
     P0_chol[np.triu_indices(dim_x, k=1)] = 0.
     P0 = P0_chol @ P0_chol.T
-    initial_state = MVNormalParameters(m0, P0)
+    initial_state = MVNParams(m0, P0)
     filtered_states = filter_routine(initial_state, y.reshape(1, -1),
                                      transition_fun, Q,
                                      observation_fun, R, extended_linearize,
