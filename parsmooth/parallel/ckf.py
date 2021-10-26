@@ -48,24 +48,34 @@ def _make_associative_filtering_params_first(observation_function, R, transition
 
         m = propagated_state.mean + F @ (initial_state.mean - prev_linearization_state.mean)
         P = propagated_state.cov + Q + F @ (initial_state.cov - prev_linearization_state.cov) @ F.T
+        linearization_points = get_sigma_points(linearization_state)
+        obs_points = observation_function(linearization_points.points)
+        obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
+        obs_mvn = get_mv_normal_parameters(obs_sigma_points)
+        update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
+                                                          obs_sigma_points, obs_mvn.mean)
 
+        H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
+        d = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
+        predicted_observation = H @ m + d
+
+        S = H @ (P - linearization_state.cov) @ H.T + R + obs_mvn.cov
     else:
         m = initial_state.mean
         P = initial_state.cov
+        linearization_points = get_sigma_points(prev_linearization_state)
+        obs_points = observation_function(linearization_points.points)
+        obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
+        obs_mvn = get_mv_normal_parameters(obs_sigma_points)
+        update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
+                                                          obs_sigma_points, obs_mvn.mean)
 
-    # Update part
-    linearization_points = get_sigma_points(linearization_state)
-    obs_points = observation_function(linearization_points.points)
-    obs_sigma_points = SigmaPoints(obs_points, linearization_points.wm, linearization_points.wc)
-    obs_mvn = get_mv_normal_parameters(obs_sigma_points)
-    update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
-                                                      obs_sigma_points, obs_mvn.mean)
+        H = jlinalg.solve(prev_linearization_state.cov, update_cross_covariance, sym_pos=True).T
+        d = obs_mvn.mean - jnp.dot(H, prev_linearization_state.mean)
+        predicted_observation = H @ m + d
 
-    H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
-    d = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
-    predicted_observation = H @ m + d
+        S = H @ (P - prev_linearization_state.cov) @ H.T + R + obs_mvn.cov
 
-    S = H @ (P - linearization_state.cov) @ H.T + R + obs_mvn.cov
     K = jlinalg.solve(S, H @ P, sym_pos=True).T
     A = jnp.zeros_like(initial_state.cov)
     b = m + K @ (y - predicted_observation)

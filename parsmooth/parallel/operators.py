@@ -36,7 +36,7 @@ def filtering_operator(elem1, elem2):
     C = jnp.dot(AIpCJ_inv, jnp.dot(C1, A2.T)) + C2
     eta = jnp.dot(AIpJC_inv, eta2 - jnp.dot(J2, b1)) + eta1
     J = jnp.dot(AIpJC_inv, jnp.dot(J2, A1)) + J1
-    return A, b, C, eta, J
+    return A, b, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
 
 @vmap
@@ -61,4 +61,4 @@ def smoothing_operator(elem1, elem2):
     g = E2 @ g1 + g2
     E = E2 @ E1
     L = E2 @ L1 @ E2.T + L2
-    return g, E, L
+    return g, E, 0.5 * (L + L.T)
