@@ -1,9 +1,10 @@
 from typing import Callable, Tuple
 
+import jax
 import jax.numpy as jnp
 import jax.scipy.linalg as jlag
 from jax import lax, jacfwd
-from jax.lax import cond
+from jax.scipy.stats import multivariate_normal
 
 from ..utils import MVNormalParameters, make_matrices_parameters
 
@@ -38,7 +39,7 @@ def predict(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     cov = jnp.dot(jac_x, jnp.dot(prior.cov, jac_x.T)) + transition_covariance
     mean = transition_function(linearization_point)
     mean = mean + jnp.dot(jac_x, prior.mean - linearization_point)
-    return MVNormalParameters(mean, cov)
+    return MVNormalParameters(mean, 0.5 * (cov + cov.T))
 
 
 def update(observation_function: Callable[[jnp.ndarray], jnp.ndarray],
@@ -82,8 +83,10 @@ def update(observation_function: Callable[[jnp.ndarray], jnp.ndarray],
 
     mean = predicted.mean + jnp.dot(gain, residual)
     cov = predicted.cov - jnp.dot(gain, jnp.dot(residual_covariance, gain.T))
-    updated_state = MVNormalParameters(mean, cov)
-    return updated_state
+    updated_state = MVNormalParameters(mean, 0.5 * (cov + cov.T))
+
+    loglikelihood = multivariate_normal.logpdf(residual, jnp.zeros_like(residual), residual_covariance)
+    return loglikelihood, updated_state
 
 
 def filter_routine(initial_state: MVNormalParameters,
@@ -92,7 +95,8 @@ def filter_routine(initial_state: MVNormalParameters,
                    transition_covariances: jnp.ndarray,
                    observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                    observation_covariances: jnp.ndarray,
-                   linearization_points: jnp.ndarray = None) -> Tuple[float, MVNormalParameters]:
+                   linearization_points: jnp.ndarray = None,
+                   propagate_first: bool = True) -> Tuple[float, MVNormalParameters]:
     """ Computes the predict-update routine of the Kalman Filter equations and returns a series of filtered_states
 
     Parameters
@@ -111,6 +115,9 @@ def filter_routine(initial_state: MVNormalParameters,
         observation error covariances for each time step, if passed only one, it is repeated n times
     linearization_points: (n, D) array, optional
         points at which to compute the jacobians.
+    propagate_first: bool, optional
+        Is the first step a transition or an update? i.e. False if the initial time step has
+        an associated observation. Default is True.
 
     Returns
     -------
@@ -126,24 +133,40 @@ def filter_routine(initial_state: MVNormalParameters,
         [transition_covariances,
          observation_covariances]))
 
-    def body(carry, inputs):
-        state, prev_linearization_point = carry
+    def prop_first_body(carry, inputs):
+        running_ell, state, prev_linearization_point = carry
         observation, transition_covariance, observation_covariance, linearization_point = inputs
         predicted_state = predict(transition_function, transition_covariance, state, prev_linearization_point)
-        updated_state = update(observation_function, observation_covariance, predicted_state,
-                               observation, linearization_point)
-        return (updated_state, linearization_point), updated_state
+        loglikelihood, updated_state = update(observation_function, observation_covariance, predicted_state,
+                                              observation, linearization_point)
 
-    initial_linearization_point = initial_state.mean if linearization_points is not None else None
-    _, filtered_states = lax.scan(body,
-                                  (initial_state, initial_linearization_point),
-                                  [observations,
-                                   transition_covariances,
-                                   observation_covariances,
-                                   linearization_points],
-                                  length=n_observations)
+        return (running_ell + loglikelihood, updated_state, linearization_point), updated_state
 
-    return filtered_states
+    def update_first_body(carry, inputs):
+        running_ell, state, _ = carry
+        observation, transition_covariance, observation_covariance, linearization_point = inputs
+        loglikelihood, updated_state = update(observation_function, observation_covariance, state,
+                                              observation, linearization_point)
+        predicted_state = predict(transition_function, transition_covariance, updated_state, linearization_point)
+        return (running_ell + loglikelihood, predicted_state, linearization_point), updated_state
+
+    body = prop_first_body if propagate_first else update_first_body
+
+    initial_linearization_point = linearization_points[0] if linearization_points is not None else None
+    linearization_points = linearization_points[1:] if propagate_first else linearization_points
+    (ell, *_), filtered_states = lax.scan(body,
+                                          (0., initial_state, initial_linearization_point),
+                                          [observations,
+                                           transition_covariances,
+                                           observation_covariances,
+                                           linearization_points],
+                                          length=n_observations)
+
+    if propagate_first:
+        filtered_states = jax.tree_map(lambda y, z: jnp.concatenate([y[None, ...], z], 0), initial_state,
+                                       filtered_states)
+
+    return ell, filtered_states
 
 
 def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
@@ -191,7 +214,8 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
 def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
                      transition_covariances: jnp.ndarray,
                      filtered_states: MVNormalParameters,
-                     linearization_points: jnp.ndarray = None
+                     linearization_points: jnp.ndarray = None,
+                     propagate_first: bool = True,
                      ) -> MVNormalParameters:
     """ Computes the extended Rauch-Tung-Striebel (a.k.a extended Kalman) smoother routine and returns a series of smoothed_states
 
@@ -205,6 +229,9 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
         transition covariances for each time step, if passed only one, it is repeated n times
     linearization_points: (n, D) array, optional
         points at which to compute the jacobians.
+    propagate_first: bool, optional
+        Is the first step a transition or an update? i.e. False if the initial time step has
+        an associated observation. Default is True.
 
     Returns
     -------
@@ -212,31 +239,29 @@ def smoother_routine(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
         list of smoothed states
     """
     n_observations = filtered_states.mean.shape[0]
+    if propagate_first:
+        transition_covariances = make_matrices_parameters(transition_covariances, n_observations - 1)
+    else:
+        transition_covariances = make_matrices_parameters(transition_covariances, n_observations)
+        transition_covariances = transition_covariances[:-1]
 
-    transition_covariances = make_matrices_parameters(transition_covariances, n_observations)
-
-    def body(carry, list_inputs):
-        j, state_ = carry
-
-        def first_step(operand):
-            state, _inputs, i = operand
-            return (i + 1, state), state
-
-        def otherwise(operand):
-            state, inputs, i = operand
-            filtered, transition_covariance, linearization_point = inputs
-            if linearization_point is None:
-                linearization_point = filtered.mean
-            smoothed_state = smooth(transition_function, transition_covariance, filtered, state, linearization_point)
-            return (i + 1, smoothed_state), smoothed_state
-
-        return cond(j > 0, otherwise, first_step, operand=(state_, list_inputs, j))
+    def body(state, inputs):
+        filtered, transition_covariance, linearization_point = inputs
+        if linearization_point is None:
+            linearization_point = filtered.mean
+        smoothed_state = smooth(transition_function, transition_covariance, filtered, state, linearization_point)
+        return smoothed_state, smoothed_state
 
     last_state = MVNormalParameters(filtered_states.mean[-1], filtered_states.cov[-1])
+    filtered_states, linearization_points = jax.tree_map(lambda x: x[:-1],
+                                                         [filtered_states, linearization_points])
     _, smoothed_states = lax.scan(body,
-                                  (0, last_state),
+                                  last_state,
                                   [filtered_states, transition_covariances, linearization_points],
                                   reverse=True)
+
+    smoothed_states = jax.tree_map(lambda y, z: jnp.concatenate([y, z[None, ...]], 0), smoothed_states,
+                                   last_state)
 
     return smoothed_states
 
@@ -247,8 +272,9 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
                               transition_covariances: jnp.ndarray,
                               observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                               observation_covariances: jnp.ndarray,
-                              initial_linearization_states: MVNormalParameters = None,
-                              n_iter: int = 100):
+                              initial_linearization_points: jnp.ndarray = None,
+                              n_iter: int = 100,
+                              propagate_first: bool = True):
     """
     Computes the Gauss-Newton iterated extended Kalman smoother
 
@@ -266,10 +292,13 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         observation function of the state space model
     observation_covariances: (K, K) or (1, K, K) or (n, K, K) array
         observation error covariances for each time step, if passed only one, it is repeated n times
-    initial_linearization_states: MVNormalParameters , optional
+    initial_linearization_points: jnp.ndarray , optional
         points at which to compute the jacobians durning the first pass.
     n_iter: int
         number of times the filter-smoother routine is computed
+    propagate_first: bool, optional
+        Is the first step a transition or an update? i.e. False if the initial time step has
+        an associated observation. Default is True.
 
     Returns
     -------
@@ -284,16 +313,21 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         [transition_covariances,
          observation_covariances]))
 
-    def body(linearization_points, _):
-        if linearization_points is not None:
-            linearization_points = linearization_points.mean
-        filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
-                                         observation_function, observation_covariances, linearization_points)
+    def body(curr_smoother, _):
+        if curr_smoother is not None:
+            linearization_points = curr_smoother.mean if isinstance(curr_smoother,
+                                                                    MVNormalParameters) else curr_smoother
+        else:
+            linearization_points = None
+
+        _, filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariances,
+                                            observation_function, observation_covariances, linearization_points,
+                                            propagate_first)
         return smoother_routine(transition_function, transition_covariances, filtered_states,
-                                linearization_points), None
+                                linearization_points, propagate_first), None
 
-    if initial_linearization_states is None:
-        initial_linearization_states = body(None, None)[0]
+    if initial_linearization_points is None:
+        initial_linearization_points = body(None, None)[0]
 
-    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_states, jnp.arange(n_iter))
+    iterated_smoothed_trajectories, _ = lax.scan(body, initial_linearization_points, jnp.arange(n_iter))
     return iterated_smoothed_trajectories

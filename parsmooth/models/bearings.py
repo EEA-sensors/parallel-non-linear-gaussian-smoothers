@@ -202,12 +202,12 @@ def get_data(x0, dt, r, T, s1, s2, q=10., random_state=None):
 
     x = np.copy(x0).astype(np.float32)
     observations = np.empty((T, 2), dtype=np.float32)
-    true_states = np.empty((T, 5), dtype=np.float32)
+    true_states = np.zeros((T+1, 5), dtype=np.float32)
     ts = np.linspace(dt, (T + 1) * dt, T).astype(np.float32)
-
+    true_states[0, :4] = x
     normals = random_state.randn(T, 2).astype(np.float32)
 
-    _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states)
+    _get_data(x, dt, a_s, s1, s2, r, normals, observations, true_states[1:])
     return ts, true_states, observations
 
 

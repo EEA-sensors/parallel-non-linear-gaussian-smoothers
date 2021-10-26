@@ -99,7 +99,8 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
                               observation_function: Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray],
                               observation_covariance: jnp.ndarray,
                               initial_linearization_states: MVNormalParameters = None,
-                              n_iter: int = 100):
+                              n_iter: int = 100,
+                              propagate_first: bool = True):
     """
     Computes the Gauss-Newton iterated cubature Kalman smoother
 
@@ -121,7 +122,9 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
         points at which to compute the jacobians durning the first pass.
     n_iter: int
         number of times the filter-smoother routine is computed
-
+    propagate_first: bool, optional
+        Is the first step a transition or an update? i.e. False if the initial time step has
+        an associated observation. Default is True.
     Returns
     -------
     iterated_smoothed_trajectories: MVNormalParameters
@@ -131,7 +134,8 @@ def iterated_smoother_routine(initial_state: MVNormalParameters,
 
     def body(linearization_points, _):
         filtered_states = filter_routine(initial_state, observations, transition_function, transition_covariance,
-                                         observation_function, observation_covariance, linearization_points)
+                                         observation_function, observation_covariance, linearization_points,
+                                         propagate_first)
         return smoother_routine(transition_function, transition_covariance, filtered_states,
                                 linearization_points), None
 
