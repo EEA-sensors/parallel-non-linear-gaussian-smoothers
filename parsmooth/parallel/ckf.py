@@ -84,7 +84,7 @@ def _make_associative_filtering_params_first(observation_function, R, transition
     eta = jnp.zeros_like(initial_state.mean)
     J = jnp.zeros_like(initial_state.cov)
 
-    return A, b, 0.5 * (C + C.T), eta, J
+    return A, b, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
 
 def _make_associative_filtering_params_generic(observation_function, Rk, transition_function, Qk_1,
@@ -133,7 +133,7 @@ def _make_associative_filtering_params_generic(observation_function, Rk, transit
 
     eta = temp @ total_obs_residual
     J = temp @ HF
-    return A, b, 0.5 * (C + C.T), eta, J
+    return A, b, 0.5 * (C + C.T), eta, 0.5 * (J + J.T)
 
 
 def filter_routine(initial_state: MVNormalParameters,
