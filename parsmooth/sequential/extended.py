@@ -152,8 +152,12 @@ def filter_routine(initial_state: MVNormalParameters,
 
     body = prop_first_body if propagate_first else update_first_body
 
-    initial_linearization_point = linearization_points[0] if linearization_points is not None else None
-    linearization_points = linearization_points[1:] if propagate_first else linearization_points
+    if linearization_points is not None:
+        initial_linearization_point = linearization_points[0] if linearization_points is not None else None
+        linearization_points = linearization_points[1:] if propagate_first else linearization_points
+    else:
+        initial_linearization_point = linearization_points = None
+
     (ell, *_), filtered_states = lax.scan(body,
                                           (0., initial_state, initial_linearization_point),
                                           [observations,
