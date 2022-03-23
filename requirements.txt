@@ -1,4 +1,3 @@
-jax[cuda]
 jupyter
 matplotlib
 numba
