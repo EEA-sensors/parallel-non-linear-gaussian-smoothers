@@ -27,6 +27,7 @@ Installation
   - By cloning  
     Clone https://github.com/EEA-sensors/parallel-non-linear-gaussian-smoothers.git  
     Run `python setup.py [install|develop] --no-deps` depending on the level of installation you want  
+    
 Manually install the dependencies `jax` and `jaxlib`, and for examples only `matplotlib`, `numba`, `tqdm`  
 
 Example
