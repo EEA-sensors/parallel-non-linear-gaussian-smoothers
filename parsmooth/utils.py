@@ -45,7 +45,7 @@ def _make_associative_filtering_params(args):
     HQ = jnp.dot(Hk, Qk_1)  # Hk @ Qk_1
 
     Sk = jnp.dot(HQ, Hk.T) + Rk
-    Kk = jlnialg.solve(Sk, HQ, sym_pos=True).T  # using the fact that S and Q are symmetric
+    Kk = jlnialg.solve(Sk, HQ, assume_a="pos").T  # using the fact that S and Q are symmetric
 
     # temp variable:
     I_KH = I_dim - jnp.dot(Kk, Hk)  # I - Kk @ Hk

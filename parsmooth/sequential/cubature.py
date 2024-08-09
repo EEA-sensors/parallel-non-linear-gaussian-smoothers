@@ -52,7 +52,7 @@ def predict(transition_function: Callable,
     cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean, propagated_sigma_points,
                                                propagated_state.mean)
 
-    F = jlinalg.solve(linearization_state.cov, cross_covariance, sym_pos=True).T  # Linearized transition function
+    F = jlinalg.solve(linearization_state.cov, cross_covariance, assume_a="pos").T  # Linearized transition function
     b = propagated_state.mean - jnp.dot(F, linearization_state.mean)  # Linearized offset
 
     mean = F @ previous_state.mean + b
@@ -97,7 +97,7 @@ def update(observation_function: Callable,
     cross_covariance = covariance_sigma_points(sigma_points, linearization_state.mean, obs_sigma_points,
                                                obs_state.mean)
 
-    H = jlinalg.solve(linearization_state.cov, cross_covariance, sym_pos=True).T  # linearized observation function
+    H = jlinalg.solve(linearization_state.cov, cross_covariance, assume_a="pos").T  # linearized observation function
 
     d = obs_state.mean - jnp.dot(H, linearization_state.mean)  # linearized observation offset
 

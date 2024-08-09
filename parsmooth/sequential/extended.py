@@ -79,7 +79,7 @@ def update(observation_function: Callable[[jnp.ndarray], jnp.ndarray],
     residual_covariance = jnp.dot(jac_x, jnp.dot(predicted.cov, jac_x.T))
     residual_covariance = residual_covariance + observation_covariance
 
-    gain = jnp.dot(predicted.cov, jlag.solve(residual_covariance, jac_x, sym_pos=True).T)
+    gain = jnp.dot(predicted.cov, jlag.solve(residual_covariance, jac_x, assume_a="pos").T)
 
     mean = predicted.mean + jnp.dot(gain, residual)
     cov = predicted.cov - jnp.dot(gain, jnp.dot(residual_covariance, gain.T))
@@ -208,7 +208,7 @@ def smooth(transition_function: Callable[[jnp.ndarray], jnp.ndarray],
     cov = jnp.dot(jac_x, jnp.dot(filtered_state.cov, jac_x.T)) + transition_covariance
     cov_diff = previous_smoothed.cov - cov
 
-    gain = jnp.dot(filtered_state.cov, jlag.solve(cov, jac_x, sym_pos=True).T)
+    gain = jnp.dot(filtered_state.cov, jlag.solve(cov, jac_x, assume_a="pos").T)
 
     mean = filtered_state.mean + jnp.dot(gain, mean_diff)
     cov = filtered_state.cov + jnp.dot(gain, jnp.dot(cov_diff, gain.T))

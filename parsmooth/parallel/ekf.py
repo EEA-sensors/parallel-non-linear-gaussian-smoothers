@@ -45,7 +45,7 @@ def _make_associative_filtering_params_first(observation_function, jac_observati
         alpha = observation_function(x_k_1) + H @ (m0 - x_k_1)
 
     S = H @ P @ H.T + R
-    K = jlinalg.solve(S, H @ P, sym_pos=True).T
+    K = jlinalg.solve(S, H @ P, assume_a="pos").T
     A = jnp.zeros_like(P0)
 
     b = m + K @ (y - alpha)
@@ -70,7 +70,7 @@ def _make_associative_filtering_params_generic(observation_function, jac_observa
     HQ = H @ Qk_1
 
     S = HQ @ H.T + Rk
-    S_invH = jlinalg.solve(S, H, sym_pos=True)
+    S_invH = jlinalg.solve(S, H, assume_a="pos")
     K = (S_invH @ Qk_1).T
     A = F - K @ H @ F
     b = K @ residual + x_k_hat - F_x_k_1

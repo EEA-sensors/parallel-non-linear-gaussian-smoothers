@@ -39,11 +39,11 @@ def _make_associative_smoothing_params_generic(transition_function, Qk, filtered
                                                     propagated_state.mean)
 
     F = jlinalg.solve(linearization_state.cov, pred_cross_covariance,
-                      sym_pos=True).T  # Linearized transition function
+                      assume_a="pos").T  # Linearized transition function
 
     Pp = Qk + propagated_state.cov + F @ (filtered_state.cov - linearization_state.cov) @ F.T
 
-    E = jlinalg.solve(Pp, F @ filtered_state.cov, sym_pos=True).T
+    E = jlinalg.solve(Pp, F @ filtered_state.cov, assume_a="pos").T
 
     g = filtered_state.mean - E @ (propagated_state.mean + F @ (filtered_state.mean - linearization_state.mean))
     L = filtered_state.cov - E @ F @ filtered_state.cov

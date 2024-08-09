@@ -44,7 +44,7 @@ def _make_associative_filtering_params_first(observation_function, R, transition
                                                         propagated_state.mean)
 
         F = jlinalg.solve(prev_linearization_state.cov, pred_cross_covariance,
-                          sym_pos=True).T  # Linearized transition function
+                          assume_a="pos").T  # Linearized transition function
 
         m = propagated_state.mean + F @ (initial_state.mean - prev_linearization_state.mean)
         P = propagated_state.cov + Q + F @ (initial_state.cov - prev_linearization_state.cov) @ F.T
@@ -55,7 +55,7 @@ def _make_associative_filtering_params_first(observation_function, R, transition
         update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
                                                           obs_sigma_points, obs_mvn.mean)
 
-        H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
+        H = jlinalg.solve(linearization_state.cov, update_cross_covariance, assume_a="pos").T
         d = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
         predicted_observation = H @ m + d
 
@@ -70,13 +70,13 @@ def _make_associative_filtering_params_first(observation_function, R, transition
         update_cross_covariance = covariance_sigma_points(linearization_points, linearization_state.mean,
                                                           obs_sigma_points, obs_mvn.mean)
 
-        H = jlinalg.solve(prev_linearization_state.cov, update_cross_covariance, sym_pos=True).T
+        H = jlinalg.solve(prev_linearization_state.cov, update_cross_covariance, assume_a="pos").T
         d = obs_mvn.mean - jnp.dot(H, prev_linearization_state.mean)
         predicted_observation = H @ m + d
 
         S = H @ (P - prev_linearization_state.cov) @ H.T + R + obs_mvn.cov
 
-    K = jlinalg.solve(S, H @ P, sym_pos=True).T
+    K = jlinalg.solve(S, H @ P, assume_a="pos").T
     A = jnp.zeros_like(initial_state.cov)
     b = m + K @ (y - predicted_observation)
     C = P - K @ S @ K.T
@@ -101,7 +101,7 @@ def _make_associative_filtering_params_generic(observation_function, Rk, transit
                                                     propagated_state.mean)
 
     F = jlinalg.solve(prev_linearization_state.cov, pred_cross_covariance,
-                      sym_pos=True).T  # Linearized transition function
+                      assume_a="pos").T  # Linearized transition function
     pred_mean_residual = propagated_state.mean - F @ prev_linearization_state.mean
     pred_cov_residual = propagated_state.cov - F @ prev_linearization_state.cov @ F.T + Qk_1
 
@@ -115,13 +115,13 @@ def _make_associative_filtering_params_generic(observation_function, Rk, transit
                                                       obs_sigma_points,
                                                       obs_mvn.mean)
 
-    H = jlinalg.solve(linearization_state.cov, update_cross_covariance, sym_pos=True).T
+    H = jlinalg.solve(linearization_state.cov, update_cross_covariance, assume_a="pos").T
     obs_mean_residual = obs_mvn.mean - jnp.dot(H, linearization_state.mean)
     obs_cov_residual = obs_mvn.cov - H @ linearization_state.cov @ H.T
 
     S = H @ pred_cov_residual @ H.T + Rk + obs_cov_residual  # total residual covariance
     total_obs_residual = (yk - H @ pred_mean_residual - obs_mean_residual)
-    S_invH = jlinalg.solve(S, H, sym_pos=True)
+    S_invH = jlinalg.solve(S, H, assume_a="pos")
 
     K = (S_invH @ pred_cov_residual).T
     A = F - K @ H @ F
